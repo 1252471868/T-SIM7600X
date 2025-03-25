@@ -31,10 +31,10 @@
 #define TINY_GSM_TEST_TCP           true
 // #define TINY_GSM_TEST_CALL     true
 // #define TINY_GSM_TEST_SMS      true
-// #define TINY_GSM_TEST_USSD     true
+#define TINY_GSM_TEST_USSD     true
 // #define TINY_GSM_TEST_TEMPERATURE   true
-// #define TINY_GSM_TEST_TIME          true
-#define TINY_GSM_TEST_GPS           true
+#define TINY_GSM_TEST_TIME          true
+// #define TINY_GSM_TEST_GPS           true
 // powerdown modem after tests
 #define TINY_GSM_POWERDOWN          true
 // #define TEST_RING_RI_PIN            true
@@ -47,7 +47,7 @@
 // #define CALL_TARGET "+380xxxxxxxxx"
 
 // Your GPRS credentials, if any
-const char apn[] = "YourAPN";
+const char apn[] = "";
 // const char apn[] = "ibasis.iot";
 const char gprsUser[] = "";
 const char gprsPass[] = "";

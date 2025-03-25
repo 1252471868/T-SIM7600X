@@ -26,9 +26,10 @@
  *************************************************************/
 
 /* Fill-in your Template ID (only if using Blynk.Cloud) */
-#define BLYNK_TEMPLATE_ID   ""
-#define BLYNK_TEMPLATE_NAME ""
-#define BLYNK_AUTH_TOKEN    "";
+#define BLYNK_TEMPLATE_ID "TMPL6kFMi5YBK"
+#define BLYNK_TEMPLATE_NAME "test"
+#define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI"
+
 // Select your modem:
 #define TINY_GSM_MODEM_SIM7600
 
@@ -65,7 +66,7 @@ char auth[] = BLYNK_AUTH_TOKEN;
 
 // Your GPRS credentials
 // Leave empty, if missing user or pass
-char apn[]  = "YourAPN";
+char apn[]  = "";
 char user[] = "";
 char pass[] = "";
 
@@ -122,8 +123,17 @@ float readBattery(uint8_t pin)
 // that you define how often to send data to Blynk App.
 void sendSensor()
 {
-    float h = bmp.readPressure() / 1000;
-    float t = bmp.readTemperature(); // or dht.readTemperature(true) for Fahrenheit
+    // Generate virtual sensor values using cosine
+    // Period of 1 hour (3600000 ms)
+    float timeScale = 2 * PI / 3600000.0;
+    float time = millis();
+    
+    // Temperature varies between 20°C and 30°C
+    float t = 25 + 5 * cos(time * timeScale);
+    
+    // Pressure varies between 990 and 1010 hPa
+    float h = 1000 + 10 * cos(time * timeScale * 1.5);
+    
     float mv = readBattery(BAT_ADC);
     Serial.print("mv :");  Serial.println(mv);
     Serial.print("Pressure :");  Serial.println(h);
@@ -135,7 +145,6 @@ void sendSensor()
     }
     // You can send any value at any time.
     // Please don't send more that 10 values per second.
-
     Blynk.virtualWrite(V0, t);
     Blynk.virtualWrite(V1, h);
     Blynk.virtualWrite(V2, ((mv / 4200) * 100));
@@ -206,10 +215,10 @@ void setup()
 
 
     // Launch BMP085
-    if (!bmp.begin()) {
-        Serial.println("Could not find a valid BMP085 sensor, check wiring!");
-        while (1) {}
-    }
+    // if (!bmp.begin()) {
+    //     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
+    //     while (1) {}
+    // }
 
 
 

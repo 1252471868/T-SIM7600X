@@ -18,7 +18,7 @@
 
 
 // Use TinyGPS NMEA math analysis library
-// #define USING_TINYGPS_LIBRARY           https://github.com/mikalhart/TinyGPSPlus.git
+#define USING_TINYGPS_LIBRARY           https://github.com/mikalhart/TinyGPSPlus.git
 
 // set GSM PIN, if any
 #define GSM_PIN ""
