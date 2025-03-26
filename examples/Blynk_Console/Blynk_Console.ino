@@ -90,6 +90,137 @@ char pass[] = "";
 #define LED_PIN             12
 bool reply = false;
 
+// Add this structure after the existing includes
+struct SensorData {
+    String time;
+    float temperature;
+    float humidity;
+    float pressure;
+    float CO_W;
+    float CO_A;
+    float SO2_W;
+    float SO2_A;
+    float NO2_W;
+    float NO2_A;
+    float OX_W;
+    float OX_A;
+    float PID_W;
+    float CO2_W;
+};
+
+// Add these global variables after other global declarations
+File dataFile;
+unsigned long lastFilePosition = 0;
+String currentLine = "";
+
+// Replace the readLatestSensorData function with these two functions
+void initializeSDCardReader() {
+    dataFile = SD.open("/WDATA2.TXT");
+    if (!dataFile) {
+        Serial.println("Failed to open WDATA2.TXT");
+        return;
+    }
+    // Skip header line
+    dataFile.readStringUntil('\n');
+    lastFilePosition = dataFile.position();
+}
+
+SensorData readNextSensorData() {
+    SensorData data;
+    
+    if (!dataFile) {
+        Serial.println("File not opened");
+        return data;
+    }
+
+    // Check if we've reached the end of file
+    if (!dataFile.available()) {
+        // Reset to beginning (after header)
+        dataFile.seek(lastFilePosition);
+        return data;
+    }
+
+    // Read next line
+    String line = dataFile.readStringUntil('\n');
+    lastFilePosition = dataFile.position();
+
+    if (line.length() > 0) {
+        int index = 0;
+        int prevIndex = 0;
+        
+        // Parse time
+        index = line.indexOf(' ');
+        data.time = line.substring(0, index);
+        prevIndex = index + 1;
+        
+        // Parse temperature
+        index = line.indexOf(' ', prevIndex);
+        data.temperature = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse humidity
+        index = line.indexOf(' ', prevIndex);
+        data.humidity = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse pressure
+        index = line.indexOf(' ', prevIndex);
+        data.pressure = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse CO_W
+        index = line.indexOf(' ', prevIndex);
+        data.CO_W = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse CO_A
+        index = line.indexOf(' ', prevIndex);
+        data.CO_A = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse SO2_W
+        index = line.indexOf(' ', prevIndex);
+        data.SO2_W = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse SO2_A
+        index = line.indexOf(' ', prevIndex);
+        data.SO2_A = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse NO2_W
+        index = line.indexOf(' ', prevIndex);
+        data.NO2_W = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse NO2_A
+        index = line.indexOf(' ', prevIndex);
+        data.NO2_A = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse OX_W
+        index = line.indexOf(' ', prevIndex);
+        data.OX_W = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse OX_A
+        index = line.indexOf(' ', prevIndex);
+        data.OX_A = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse PID_W
+        index = line.indexOf(' ', prevIndex);
+        data.PID_W = line.substring(prevIndex, index).toFloat();
+        prevIndex = index + 1;
+        
+        // Parse CO2_W (last value)
+        data.CO2_W = line.substring(prevIndex).toFloat();
+
+        Serial.print("Read line: "); Serial.println(line);
+    }
+
+    return data;
+}
 
 BLYNK_WRITE(V3)
 {
@@ -123,31 +254,26 @@ float readBattery(uint8_t pin)
 // that you define how often to send data to Blynk App.
 void sendSensor()
 {
-    // Generate virtual sensor values using cosine
-    // Period of 1 hour (3600000 ms)
-    float timeScale = 2 * PI / 3600000.0;
-    float time = millis();
+    SensorData sensorData = readNextSensorData();
     
-    // Temperature varies between 20°C and 30°C
-    float t = 25 + 5 * cos(time * timeScale);
+    // float mv = readBattery(BAT_ADC);
+    // Serial.print("Time: "); Serial.println(sensorData.time);
+    // Serial.print("Temperature: "); Serial.println(sensorData.temperature);
+    // Serial.print("Pressure: "); Serial.println(sensorData.pressure);
+    // Serial.print("Battery: "); Serial.println(mv);
     
-    // Pressure varies between 990 and 1010 hPa
-    float h = 1000 + 10 * cos(time * timeScale * 1.5);
-    
-    float mv = readBattery(BAT_ADC);
-    Serial.print("mv :");  Serial.println(mv);
-    Serial.print("Pressure :");  Serial.println(h);
-    Serial.print("Temperature :");  Serial.println(t);
-
-    if (isnan(h) || isnan(t) || isnan(mv)) {
-        Serial.println("Failed to read from DHT sensor!");
-        return;
-    }
-    // You can send any value at any time.
-    // Please don't send more that 10 values per second.
-    Blynk.virtualWrite(V0, t);
-    Blynk.virtualWrite(V1, h);
-    Blynk.virtualWrite(V2, ((mv / 4200) * 100));
+    // Send the actual sensor data to Blynk
+    Blynk.virtualWrite(V0, sensorData.temperature);
+    Blynk.virtualWrite(V1, sensorData.pressure);
+    // Blynk.virtualWrite(V2, ((mv / 4200) * 100));
+    // Add more virtual pins for other sensors
+    Blynk.virtualWrite(V4, sensorData.humidity);
+    Blynk.virtualWrite(V5, sensorData.CO_W);
+    Blynk.virtualWrite(V6, sensorData.SO2_W);
+    Blynk.virtualWrite(V7, sensorData.NO2_W);
+    Blynk.virtualWrite(V8, sensorData.OX_W);
+    Blynk.virtualWrite(V9, sensorData.PID_W);
+    Blynk.virtualWrite(V10, sensorData.CO2_W);
 }
 
 #ifdef DUMP_AT_COMMANDS
@@ -192,12 +318,13 @@ void setup()
 
     //Initialize SDCard
     SPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
-    if (!SD.begin(SD_CS)) {
+    if (!SD.begin(SD_CS)) { 
         Serial.println("SDCard MOUNT FAIL");
     } else {
         uint32_t cardSize = SD.cardSize() / (1024 * 1024);
         String str = "SDCard Size: " + String(cardSize) + "MB";
         Serial.println(str);
+        initializeSDCardReader();
     }
 
 
@@ -223,8 +350,8 @@ void setup()
 
 
     Blynk.begin(auth, modem, apn, user, pass);
-    // Setup a function to be called every second
-    timer.setInterval(2000L, sendSensor);
+    // Change interval to 10 seconds (10000L milliseconds)
+    timer.setInterval(10000L, sendSensor);
 }
 
 void loop()
@@ -233,4 +360,11 @@ void loop()
     Blynk.run();
     timer.run();
 
+}
+
+// Add cleanup in case of reset or error
+void cleanup() {
+    if (dataFile) {
+        dataFile.close();
+    }
 }
