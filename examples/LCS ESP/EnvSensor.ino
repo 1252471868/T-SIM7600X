@@ -13,6 +13,7 @@
 */
 
 #include "EnvSensor.h"
+#include <ArduinoJson.h>
 
 #define DUMP_AT_COMMANDS
 
@@ -71,15 +72,49 @@ float readBattery(uint8_t pin) {
   return battery_voltage;
 }
 
-// Send sensor data to Blynk
+// Add these global variables
+StaticJsonDocument<200> doc;
+HardwareSerial ArduinoSerial(2); // Using UART2 for Arduino communication
+
+// Replace readSensors() with this new function
+void readSensorsFromArduino() {
+  if (ArduinoSerial.available()) {
+    String jsonData = ArduinoSerial.readStringUntil('\n');
+    
+    // Deserialize JSON
+    DeserializationError error = deserializeJson(doc, jsonData);
+    
+    if (error) {
+      Serial.println("JSON parsing failed!");
+      return;
+    }
+
+    // Extract values from JSON
+    temperature = doc["temperature"];
+    humidity = doc["humidity"];
+    pressure = doc["pressure"];
+    v_CO_w = doc["CO_w"];
+    v_CO_a = doc["CO_a"];
+    v_SO2_w = doc["SO2_w"];
+    v_SO2_a = doc["SO2_a"];
+    v_NO2_w = doc["NO2_w"];
+    v_NO2_a = doc["NO2_a"];
+    v_OX_w = doc["OX_w"];
+    v_OX_a = doc["OX_a"];
+    v_pid_w = doc["pid_w"];
+    v_co2_w = doc["CO2_w"];
+  }
+}
+
+// Update sendSensorData() function
 void sendSensorData() {
-  // Read all sensors
-  readSensors();
+  // Read data from Arduino
+  readSensorsFromArduino();
   
-  // Send to Blynk (V0-V2 as in example, adding more virtual pins for other sensors)
+  // Send to Blynk
   Blynk.virtualWrite(V0, temperature);
   Blynk.virtualWrite(V1, humidity);
-  Blynk.virtualWrite(V2, ((readBattery(BAT_ADC) / 4200) * 100)); // Battery percentage
+  Blynk.virtualWrite(V2, ((readBattery(BAT_ADC) / 4200) * 100));
   
   // Gas sensors
   Blynk.virtualWrite(V4, v_CO_w);
@@ -93,13 +128,10 @@ void sendSensorData() {
   Blynk.virtualWrite(V12, v_pid_w);
   Blynk.virtualWrite(V13, v_co2_w);
   
-  // Also log to SD if logging is enabled
+  // Log to SD if enabled
   if (!stopReading) {
     logToSD();
   }
-  
-  // Print to serial for debug
-  Serial.println("Data sent to Blynk");
 }
 
 // Set up system time from network
@@ -178,126 +210,6 @@ void reconnectSD() {
   lcd.print("SD reconnected");
 }
 
-// Read all sensors
-void readSensors() {
-  // BME680 sensor for temperature, humidity, pressure
-  if (!bme.performReading()) {
-    Serial.println("Failed to read BME680");
-    return;
-  }
-  
-  temperature = bme.temperature;
-  humidity = bme.humidity;
-  pressure = bme.pressure;
-  
-  // Alphasense gas sensors
-  v_CO_w = analogRead(pin_CO_w) / 4095.0 * voltageSupply;
-  v_CO_a = analogRead(pin_CO_a) / 4095.0 * voltageSupply;
-  v_SO2_w = analogRead(pin_SO2_w) / 4095.0 * voltageSupply;
-  v_SO2_a = analogRead(pin_SO2_a) / 4095.0 * voltageSupply;
-  v_NO2_w = analogRead(pin_NO2_w) / 4095.0 * voltageSupply;
-  v_NO2_a = analogRead(pin_NO2_a) / 4095.0 * voltageSupply;
-  v_OX_w = analogRead(pin_OX_w) / 4095.0 * voltageSupply;
-  v_OX_a = analogRead(pin_OX_a) / 4095.0 * voltageSupply;
-  v_pid_w = analogRead(pin_pid) / 4095.0 * voltageSupply;
-  v_co2_w = analogRead(pin_CO2) / 4095.0 * voltageSupply;
-  
-  // Update LCD display
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  char timeBuffer[20];
-  sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
-  lcd.print(timeBuffer);
-  lcd.print(' ');
-  lcd.print(int(temperature));
-  lcd.print('C');
-  lcd.print(' ');
-  lcd.print(int(humidity));
-  lcd.print('%');
-  
-  // Display gas sensor data
-  lcd.setCursor(0, 1);
-  lcd.print("CO:");
-  lcd.print(int(v_CO_w * 100));
-  lcd.print(" NO2:");
-  lcd.print(int(v_NO2_w * 100));
-}
-
-// Log data to SD card
-void logToSD() {
-  if (!SD.begin(SD_CS)) {
-    reconnectSD();
-    return;
-  }
-  
-  SDstorage = SD.open(filename, FILE_WRITE);
-  if (SDstorage) {
-    char timeBuffer[20];
-    sprintf(timeBuffer, "%02d:%02d:%02d", hour(), minute(), second());
-    
-    SDstorage.print(timeBuffer);
-    SDstorage.print(" ");
-    SDstorage.print(temperature);
-    SDstorage.print(" ");
-    SDstorage.print(humidity);
-    SDstorage.print(" ");
-    SDstorage.print(pressure);
-    SDstorage.print(" ");
-    
-    // Gas sensors
-    SDstorage.print(v_CO_w, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_CO_a, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_SO2_w, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_SO2_a, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_NO2_w, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_NO2_a, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_OX_w, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_OX_a, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_pid_w, 3);
-    SDstorage.print(" ");
-    SDstorage.print(v_co2_w, 3);
-    SDstorage.println("");
-    
-    SDstorage.flush();
-    
-    // Check if we need to create a new file due to size limit
-    if (SDstorage.size() > MAX_FILE_SIZE) {
-      SDstorage.close();
-      
-      // Create a new file with incremented name
-      int suffix = 1;
-      String newName;
-      do {
-        newName = filename.substring(0, filename.length() - 4) + "_" + String(suffix) + ".txt";
-        suffix++;
-      } while (SD.exists(newName));
-      
-      filename = newName;
-      Serial.println("Created new log file: " + filename);
-      
-      // Write header to new file
-      SDstorage = SD.open(filename, FILE_WRITE);
-      if (SDstorage) {
-        SDstorage.println("Time Temperature(C) Humidity(%) Pressure(pa) CO_W CO_A SO2_W SO2_A NO2_W NO2_A OX_W OX_A PID_W CO2_W");
-        SDstorage.flush();
-        SDstorage.close();
-      }
-    } else {
-      SDstorage.close();
-    }
-  } else {
-    Serial.println("Error opening SD card file for writing");
-  }
-}
-
 // Setup the modem
 void setupModem() {
   Serial1.begin(UART_BAUD, SERIAL_8N1, MODEM_RX, MODEM_TX);
@@ -336,19 +248,8 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
   
-  // Initialize BME680 sensor
-  if (!bme.begin()) {
-    Serial.println("Could not find BME680 sensor!");
-    lcd.clear();
-    lcd.print("BME680 error!");
-    while (1) delay(10);
-  }
-  
-  bme.setTemperatureOversampling(BME680_OS_8X);
-  bme.setHumidityOversampling(BME680_OS_2X);
-  bme.setPressureOversampling(BME680_OS_4X);
-  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  bme.setGasHeater(320, 150); // 320*C for 150 ms
+  // Initialize UART for Arduino communication
+  ArduinoSerial.begin(115200, SERIAL_8N1, 16, 17); // RX=16, TX=17 (adjust pins as needed)
   
   // Initialize modem
   setupModem();
