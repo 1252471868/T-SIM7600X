@@ -14,12 +14,25 @@
 #include <SoftwareSerial.h>
 #include <Wire.h>
 #include "rgb_lcd.h"
-#include <SPI.h>
-#include <SD.h>
 #include <Time.h>
 #include <TimeLib.h>
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
+#include <ArduinoJson.h>
+
+// Add TimerOne library for hardware timer
+#include <TimerOne.h>
+
+// Command definitions for ESP32 communication
+#define CMD_INFO        "INFO"     // Check communication status
+#define CMD_DATA        "DATA"     // Request sensor data
+#define CMD_RESET       "RESET"    // Reset command
+#define CMD_ACK         "ACK"      // Acknowledgment
+#define CMD_NONET       "NONET"    // No internet mode query
+#define CMD_YES         "YES"      // Positive response
+#define CMD_NO          "NO"       // Negative response
+#define CMD_COMPLETE    "COMPLETE" // Data successfully received
+#define CMD_FAIL        "FAIL"     // Command failed
 
 // Alphasense
 #define pin_CO_w A0  // working electrode for CO B4
@@ -41,62 +54,356 @@ const float voltageSupply = 5.0; // voltages
 rgb_lcd lcd;
 // Adafruit_BME680 bme;
 Adafruit_BME680 bme(&Wire);
-// Sampling duration
-/*
- * ************************************************************
- */
-const long minute2run = 15;       // minutes in each loop
-const long numberOfLoop = 100000; // number of loops to run, so total minutes to run is minute2run * numberOfLoop
-// Define the maximum file size (in bytes)
-const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
+// Sampling duration - removing these as Arduino will run continuously
+char filename[20]; // Keep this for display purposes only
 
-String filename = "DAT";
+// Communication control
+unsigned long lastEspCommandTime = 0;   // Last time we received a command from ESP32
+unsigned long lastCommunicationCheck = 0; // Last time we checked communication
+const unsigned long COMM_TIMEOUT = 60000; // 60 seconds timeout
+bool autoResetEnabled = true;
+const int resetPin = 8;  // Digital pin connected to reset circuit (adjust as needed)
 
-volatile bool stopReading = false;
+// Add timer-based sampling and volatile variables
+volatile float rh = 0;
+volatile float t = 0;
+volatile float p = 0;
+volatile double v_CO_w = 0;
+volatile double v_CO_a = 0;
+volatile double v_SO2_w = 0;
+volatile double v_SO2_a = 0;
+volatile double v_NO2_w = 0;
+volatile double v_NO2_a = 0;
+volatile double v_OX_w = 0;
+volatile double v_OX_a = 0;
+volatile double v_pid_w = 0;
+volatile double v_co2_w = 0;
 
-const int buttonPin = 2;
-const unsigned long debounceDelay = 50;
-volatile unsigned long lastInterruptTime = 0;
+// Sampling control
+unsigned long lastSampleTime = 0;
+const unsigned long SAMPLE_INTERVAL = 10000; // Sample every 10 seconds
+volatile bool dataReady = false;
 
-void stopSDReading()
+void setTimeFromString(String timeStr)
 {
-    unsigned long interruptTime = millis();
-    if (interruptTime - lastInterruptTime > debounceDelay)
-    {
-        stopReading = true;
-        lastInterruptTime = interruptTime;
-        Serial.println("SD card reading stopped.");
-        // SDstorage.close();
-    }
+    int year = timeStr.substring(0, 4).toInt();
+    int month = timeStr.substring(5, 7).toInt();
+    int day = timeStr.substring(8, 10).toInt();
+    int hour = timeStr.substring(11, 13).toInt();
+    int minute = timeStr.substring(14, 16).toInt();
+    int second = timeStr.substring(17, 19).toInt();
+
+    setTime(hour, minute, second, day, month, year);
+    Serial.print("Time set to: ");
+    Serial.println(timeStr);
 }
 
-// void beginSDReading() {
-//   unsigned long interruptTime = millis();
-//   if (interruptTime - lastInterruptTime > debounceDelay) {
-//     stopReading = false;
-//     lastInterruptTime = interruptTime;
-
-//   }
-// }
-
-void SD_reconnect()
-{
-    while (!SD.begin())
-    {
-        lcd.setCursor(0, 0); // 2nd row, 1st col
-        lcd.print("SD reconnecting");
-        delay(500);
+// Process commands received from ESP32
+void processEspCommands() {
+  if (Serial2.available()) {
+    // Wait for a complete JSON object
+    String jsonString = "";
+    bool foundStart = false;
+    bool foundEnd = false;
+    
+    // Clear any garbage data first
+    while (Serial2.available() && Serial2.peek() != '{') {
+      Serial2.read();
     }
-    lcd.print("SD reconnected");
+    
+    // Read until we find a complete JSON object
+    unsigned long startTime = millis();
+    while (Serial2.available() && (millis() - startTime < 1000)) {
+      char c = Serial2.read();
+      
+      if (c == '{') {
+        foundStart = true;
+        jsonString = "{";
+        continue;
+      }
+      
+      if (foundStart) {
+        jsonString += c;
+        
+        if (c == '}') {
+          foundEnd = true;
+          break;
+        }
+      }
+    }
+    
+    // Only process if we have a complete JSON object
+    if (foundStart && foundEnd) {
+      Serial.println("Received JSON: " + jsonString);
+      
+      // Parse JSON
+      JsonDocument cmdDoc;
+      DeserializationError error = deserializeJson(cmdDoc, jsonString);
+      
+      if (error) {
+        Serial.print("JSON parsing failed: ");
+        Serial.println(error.c_str());
+        return;
+      }
+      
+      // Extract command
+      String command = cmdDoc["cmd"].as<String>();
+      
+      // Update communication timestamp
+      lastEspCommandTime = millis();
+      
+      // Handle different commands
+      if (command == CMD_INFO) {
+        // Information/communication check
+        sendJsonResponse(CMD_ACK, "");
+        Serial.println("Info request acknowledged");
+      }
+      else if (command == CMD_DATA) {
+        // ESP32 is requesting sensor data
+        sendJsonResponse(CMD_ACK, "");
+        
+        // Check if data is ready
+        if (dataReady) {
+          sendSensorDataToEsp();
+        } else {
+          // If data isn't ready, we'll just wait for the next timer interrupt
+          Serial.println("Data not ready yet, waiting for next sample");
+        }
+      }
+      else if (command == CMD_RESET) {
+        // ESP32 is requesting a reset
+        sendJsonResponse(CMD_ACK, "");
+        Serial.println("Reset requested by ESP32");
+        delay(200);
+        resetArduino();
+      }
+      else if (command == CMD_NONET) {
+        // ESP32 is asking if we accept No Internet mode
+        sendJsonResponse(CMD_YES, "");
+        Serial.println("Accepting No Internet mode");
+      }
+      else if (command == CMD_COMPLETE) {
+        // ESP32 has successfully received data
+        Serial.println("ESP32 confirmed data reception");
+      }
+    }
+  }
+  
+  // Check for ESP32 communication timeout every 5 seconds
+  if (millis() - lastCommunicationCheck > 5000) {
+    lastCommunicationCheck = millis();
+    
+    if (autoResetEnabled && (millis() - lastEspCommandTime > COMM_TIMEOUT)) {
+      Serial.println("ESP32 communication timeout, resetting...");
+      resetArduino();
+    }
+  }
+}
+
+// Send JSON formatted response
+void sendJsonResponse(const String& cmd, const String& data) {
+  JsonDocument respDoc;
+  respDoc["cmd"] = cmd;
+  respDoc["data"] = data;
+  
+  String response;
+  serializeJson(respDoc, response);
+  Serial2.println(response);
+  
+  Serial.print("Sent response: ");
+  Serial.println(response);
+}
+
+// Sample sensors on a timer
+void sampleSensors() {
+  // This function is called by the timer interrupt
+  // Use noInterrupts/interrupts to prevent other interrupts during critical sections
+  noInterrupts();
+  
+  // Read sensor data
+  v_CO_w = analogRead(pin_CO_w) / 1024.000 * voltageSupply;
+  v_CO_a = analogRead(pin_CO_a) / 1024.000 * voltageSupply;
+  v_SO2_w = analogRead(pin_SO2_w) / 1024.000 * voltageSupply;
+  v_SO2_a = analogRead(pin_SO2_a) / 1024.000 * voltageSupply;
+  v_NO2_w = analogRead(pin_NO2_w) / 1024.000 * voltageSupply;
+  v_NO2_a = analogRead(pin_NO2_a) / 1024.000 * voltageSupply;
+  v_OX_w = analogRead(pin_OX_w) / 1024.000 * voltageSupply;
+  v_OX_a = analogRead(pin_OX_a) / 1024.000 * voltageSupply;
+  v_pid_w = analogRead(pin_pid) / 1024.000 * voltageSupply;
+  v_co2_w = analogRead(pin_CO2) / 1024.000 * voltageSupply;
+
+  // Get BME680 readings
+  if (bme.performReading()) {
+    rh = bme.humidity;   // relative humidity (%)
+    t = bme.temperature; // temperature (C)
+    p = bme.pressure;    // pressure (pa)
+    
+    dataReady = true;
+  }
+  
+  interrupts();
+}
+
+// Send sensor data to ESP32 in JSON format
+void sendSensorDataToEsp() {
+  // Create JSON document with an array for data
+  JsonDocument sensorDoc;
+  
+  // Format time string
+  char timebuffer_save[25];
+  sprintf(timebuffer_save, "%02d %02d %02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
+  
+  // Create the command structure
+  sensorDoc["cmd"] = CMD_DATA;
+  
+  // Create a data array to store values in a consistent order
+  JsonArray dataArray = sensorDoc.createNestedArray("data");
+  
+  // Add all data to the array in a predefined order
+  dataArray.add(timebuffer_save);     // 0: timestamp
+  dataArray.add(t);                   // 1: temperature
+  dataArray.add(rh);                  // 2: humidity
+  dataArray.add(p);                   // 3: pressure 
+  dataArray.add(bme.readAltitude(SEALEVELPRESSURE_HPA)); // 4: altitude
+  dataArray.add(v_CO_w);              // 5: CO_w
+  dataArray.add(v_CO_a);              // 6: CO_a
+  dataArray.add(v_SO2_w);             // 7: SO2_w
+  dataArray.add(v_SO2_a);             // 8: SO2_a
+  dataArray.add(v_NO2_w);             // 9: NO2_w
+  dataArray.add(v_NO2_a);             // 10: NO2_a
+  dataArray.add(v_OX_w);              // 11: OX_w
+  dataArray.add(v_OX_a);              // 12: OX_a
+  dataArray.add(v_pid_w);             // 13: pid_w
+  dataArray.add(v_co2_w);             // 14: CO2_w
+  
+  // Serialize and send the complete command
+  String jsonData;
+  serializeJson(sensorDoc, jsonData);
+  Serial2.println(jsonData);
+  
+  Serial.println("Sensor data sent to ESP32");
+}
+
+// Reset the Arduino
+void resetArduino() {
+  Serial.println("Resetting Arduino...");
+  
+  // Try to notify ESP32 before reset
+  sendJsonResponse(CMD_RESET, "");
+  
+  delay(100);
+  digitalWrite(resetPin, LOW);
+  delay(100);
+  digitalWrite(resetPin, HIGH);
+  
+  // If hardware reset doesn't work, use software reset
+  asm volatile ("jmp 0");  // Software reset
+}
+
+// Check communication with ESP32 on startup - replace existing verification
+void checkEspCommunication() {
+  bool communicationEstablished = false;
+  unsigned long startTime = millis();
+  Serial.println("Checking ESP32 communication...");
+  
+  // Send reset notification
+  sendJsonResponse(CMD_RESET, "");
+  
+  // Try to establish communication for up to 60 seconds
+  while (millis() - startTime < 60000) {
+    if (Serial2.available()) {
+      // Wait for a complete JSON object
+      String jsonString = "";
+      bool foundStart = false;
+      bool foundEnd = false;
+      
+      // Clear any garbage data first
+      while (Serial2.available() && Serial2.peek() != '{') {
+        Serial2.read();
+      }
+      
+      // Read until we find a complete JSON object
+      unsigned long readStartTime = millis();
+      while (Serial2.available() && (millis() - readStartTime < 1000)) {
+        char c = Serial2.read();
+        
+        if (c == '{') {
+          foundStart = true;
+          jsonString = "{";
+          continue;
+        }
+        
+        if (foundStart) {
+          jsonString += c;
+          
+          if (c == '}') {
+            foundEnd = true;
+            break;
+          }
+        }
+      }
+      
+      // Only process if we have a complete JSON object
+      if (foundStart && foundEnd) {
+        Serial.println("Received JSON: " + jsonString);
+        
+        // Parse JSON
+        JsonDocument respDoc;
+        DeserializationError error = deserializeJson(respDoc, jsonString);
+        
+        if (error) {
+          Serial.print("JSON parsing failed: ");
+          Serial.println(error.c_str());
+          continue;
+        }
+        
+        // Extract command
+        String response = respDoc["cmd"].as<String>();
+        
+        if (response == CMD_ACK || response == CMD_INFO) {
+          sendJsonResponse(CMD_ACK, "");
+          communicationEstablished = true;
+          Serial.println("Communication with ESP32 established!");
+          lcd.setCursor(0, 1);
+          lcd.print("ESP32 Connected");
+          lastEspCommandTime = millis();
+          break;
+        }
+      }
+    }
+    
+    // Periodically send reset notification
+    if (millis() - startTime > 5000 && (millis() - startTime) % 5000 < 100) {
+      sendJsonResponse(CMD_RESET, "");
+    }
+    
+    delay(100);
+  }
+  
+  if (!communicationEstablished) {
+    Serial.println("Failed to establish communication with ESP32, resetting...");
+    lcd.setCursor(0, 1);
+    lcd.print("ESP32 Failed!");
+    delay(3000);
+    resetArduino();
+  }
 }
 
 void setup()
 {
     // begin serial communication
     Serial.begin(115200);
+    Serial2.begin(115200);
     delay(500);
     Serial.println("Initializing");
-    attachInterrupt(digitalPinToInterrupt(buttonPin), stopSDReading, FALLING);
+
+    // Initialize reset pin
+    pinMode(resetPin, OUTPUT);
+    digitalWrite(resetPin, HIGH);
+    
+    // Update communication timestamp
+    lastEspCommandTime = millis();
+
     // initiate LCD monitor
     lcd.begin(16, 2);
 
@@ -114,7 +421,7 @@ void setup()
     delay(500);
     Serial.println("1");
 
-    // Serial.begin(9600);
+    // Initialize BME680 sensor
     if (!bme.begin())
     {
         Serial.println("BME680 error!");
@@ -132,369 +439,128 @@ void setup()
 
     Serial.println("Sensors initialized");
     delay(500);
-
-    // initialize SD module
-    if (!SD.begin())
-    {
-        while (1)
-            ;
-        delay(500);
-    }
     Serial.println("2");
 
-    Serial.println("SD card module initialized");
-    delay(500);
-    lcd.clear();
-    lcd.setCursor(0, 0); // 2nd row, 1st col
-    lcd.print("SD ready");
-    delay(500);
-
-    bool file = false; // tracks when we found a file name we can use
-    int count = 0;     // used for naming the file
-    while (!file)
-    {
-        if (SD.exists(filename + ".txt"))
-        {
-            count++;                          // up the count for naming the file
-            filename = "DAT" + (String)count; // make a new name
-        }
-        else
-            file = true; // we found a new name so we can exit loop
-    }
-
-    filename = filename + ".txt";
-    setTime(0, 0, 0, 1, 9, 2022); // change it to the date of experiment
-    // Oct 20, 2021 -> setTime(0, 0, 0, 20, 10, 2021);
-    // Sept 9, 2021 -> setTime(0, 0, 0, 9, 9, 2021);
-
-    lcd.setCursor(0, 1); // 2nd row, 1st col
-    lcd.print(filename);
-    Serial.print(filename);
-    delay(3000);
-    // starting measurement loop
-    int loopNow = 0; // the current loop
-    File SDstorage;
-    SDstorage = SD.open(filename, FILE_WRITE);
-    SDstorage.print("Time");
-    SDstorage.print(" ");
-    SDstorage.print("Temperature(C)");
-    SDstorage.print(" ");
-    SDstorage.print("Humidity(%)");
-    SDstorage.print(" ");
-    SDstorage.print("Pressure(pa)");
-    SDstorage.print(" ");
-    SDstorage.print("CO_W");
-    SDstorage.print(" "); //~V, CO-B4, working voltage
-    SDstorage.print("CO_A");
-    SDstorage.print(" "); //~V, CO_B4, aux voltage
-    SDstorage.print("SO2_W");
-    SDstorage.print(" "); //~V, SO2-B4, working voltage
-    SDstorage.print("SO2_A");
-    SDstorage.print(" "); //~V, SO2_B4, aux voltage
-    SDstorage.print("NO2_W");
-    SDstorage.print(" "); //~V, NO2-B43F, working voltage
-    SDstorage.print("NO2_A");
-    SDstorage.print(" "); //~V, NO2-B43F, aux voltage
-    SDstorage.print("OX_W");
-    SDstorage.print(" "); //~V, OX-B431, working voltage
-    SDstorage.print("OX_A");
-    SDstorage.print(" "); //~V, OX-B431, aux voltage
-    SDstorage.print("PID_W");
-    SDstorage.print(" "); //~V, PID, working voltage
-    SDstorage.print("CO2_W");
-    SDstorage.print(" "); //~V, CO2, working voltage
-    SDstorage.println(" ");
-    lcd.print("File created");
-    lcd.setCursor(0, 1); // 2nd line, 1st row
-    SDstorage.flush();   // close SDstorage instance to save headings
     delay(1000);
+    // starting measurement loop
+    Serial.println("Connecting to AP...");
+    
+    // Initialize hardware timer for sensor sampling (every 5 seconds)
+    Timer1.initialize(SAMPLE_INTERVAL * 1000); // Timer uses microseconds
+    Timer1.attachInterrupt(sampleSensors);
+    
+    // Perform initial sensor reading
+    sampleSensors();
+    
+    // Verify communication with ESP32 using command system
+    checkEspCommunication();
+    
+    sprintf(filename, "%02d%02d%02d%02d%02d%02d.txt", year() % 100, month(), day(), hour(), minute(), second());
+    lcd.setCursor(0, 1); // 2nd row, 1st col
+    lcd.print(filename); 
+    Serial.print(filename);
 
-    while (loopNow < numberOfLoop)
-    {
-        loopNow++;
-        time_t startTimeOfThisLoop = now(); // starting time of this loop in seconds
-
-        if (stopReading == true)
-        {
-            SDstorage.close();
-            Serial.println("SD card reading stopped.");
-        }
-
-        if (SDstorage)
-        {
-            lcd.clear();
-            lcd.setCursor(0, 0);
-            Serial.print("Time");
-            Serial.print(" ");
-            Serial.print("Temperature(C)");
-            Serial.print(" ");
-            Serial.print("Humidity(%)");
-            Serial.print(" ");
-            Serial.print("Pressure(pa)");
-            Serial.print(" ");
-            Serial.print("CO_W");
-            Serial.print(" "); //~V, CO-B4, working voltage
-            Serial.print("CO_A");
-            Serial.print(" "); //~V, CO_B4, aux voltage
-            Serial.print("SO2_W");
-            Serial.print(" "); //~V, SO2-B4, working voltage
-            Serial.print("SO2_A");
-            Serial.print(" "); //~V, SO2_B4, aux voltage
-            Serial.print("NO2_W");
-            Serial.print(" "); //~V, NO2-B43F, working voltage
-            Serial.print("NO2_A");
-            Serial.print(" "); //~V, NO2-B43F, aux voltage
-            Serial.print("OX_W");
-            Serial.print(" "); //~V, OX-B431, working voltage
-            Serial.print("OX_A");
-            Serial.print(" "); //~V, OX-B431, aux voltage
-            Serial.print("PID_W");
-            Serial.print(" "); //~V, PID, working voltage
-            Serial.print("CO2_W");
-            Serial.print(" "); //~V, CO2, working voltage
-            Serial.println(" ");
-
-            // record sensor readings and save onto SD card
-            lcd.print("Start recording");
-            delay(1000);
-            lcd.clear();
-            lcd.print("3");
-            delay(1000);
-            lcd.print("2");
-            delay(1000);
-            lcd.print("1");
-            delay(1000);
-            lcd.clear();
-
-            char timebuffer[10];
-            char number2display[50]; // number to display (10 * original voltage) on LCD monitor
-
-            time_t timeDuringRecording = now();
-            if (stopReading == false)
-            {
-                // SDstorage = SD.open(filename, FILE_WRITE);
-                do
-                {
-                    timeDuringRecording = now(); // time during recording loop, in loops
-
-                    /*
-                      Alphasense Sensors
-                    */
-
-                    double v_CO_w = analogRead(pin_CO_w) / 1024.000 * voltageSupply;
-                    double v_CO_a = analogRead(pin_CO_a) / 1024.000 * voltageSupply;
-                    double v_SO2_w = analogRead(pin_SO2_w) / 1024.000 * voltageSupply;
-                    double v_SO2_a = analogRead(pin_SO2_a) / 1024.000 * voltageSupply;
-                    double v_NO2_w = analogRead(pin_NO2_w) / 1024.000 * voltageSupply;
-                    double v_NO2_a = analogRead(pin_NO2_a) / 1024.000 * voltageSupply;
-                    double v_OX_w = analogRead(pin_OX_w) / 1024.000 * voltageSupply;
-                    double v_OX_a = analogRead(pin_OX_a) / 1024.000 * voltageSupply;
-                    double v_pid_w = analogRead(pin_pid) / 1024.000 * voltageSupply;
-                    double v_co2_w = analogRead(pin_CO2) / 1024.000 * voltageSupply;
-
-                    /*
-                      Temperature and humidity sensor: BME 680
-                    */
-                    if (!bme.performReading())
-                    {
-                        Serial.println("Failed to perform reading :(");
-                        return;
-                    }
-                    float rh = bme.humidity;   // relative humidity (%)
-                    float t = bme.temperature; // temperature (C)
-                    float p = bme.pressure;    // pressure (pa)
-
-                    /*
-                      LCD screen: v 4.0
-                    */
-
-                    long counter = 0;
-                    while (counter < 2)
-                    {
-                        lcd.clear();
-
-                        lcd.setCursor(0, 0);
-                        sprintf(timebuffer, "%02d:%02d:%02d", hour(), minute(), second());
-                        lcd.print(timebuffer);
-                        lcd.print(' ');
-                        lcd.print(int(t));
-                        lcd.print(' ');
-                        lcd.print(int(rh));
-                        lcd.print(' ');
-
-                        if (counter == 0)
-                        {
-                            lcd.print('W'); // indicate it is for working voltage
-                            sprintf(number2display, "%02d %02d %02d %02d %03d", int(v_CO_w * 10), int(v_SO2_w * 10), int(v_NO2_w * 10), int(v_OX_w * 10), int(v_pid_w * 100));
-                        }
-                        else
-                        {
-                            lcd.print('A'); // indicate it is for auxiliary voltage
-                            sprintf(number2display, "%02d %02d %02d %02d %03d", int(v_CO_a * 10), int(v_SO2_a * 10), int(v_NO2_a * 10), int(v_OX_a * 10), int(v_co2_w * 100));
-                        }
-                        lcd.setCursor(0, 1); // 2nd line, 1st row
-                        lcd.print(number2display);
-
-                        delay(1000);
-                        counter++;
-                    }
-
-                    /*
-                      SD module: write data
-                    */
-
-                    // sprintf(timebuffer, "%d:%d:%d", hour(), minute(), second());
-                    if (SD.begin())
-                    {
-                        SDstorage.print(timebuffer);
-                        SDstorage.print(" ");
-                        SDstorage.print(bme.temperature);
-                        SDstorage.print(" ");
-                        SDstorage.print(bme.humidity);
-                        SDstorage.print(" ");
-                        SDstorage.print(bme.pressure);
-                        SDstorage.print(" ");
-                        SDstorage.print(v_CO_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_CO_a, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_SO2_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_SO2_a, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_NO2_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_NO2_a, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_OX_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_OX_a, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_pid_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.print(v_co2_w, 3);
-                        SDstorage.print(" "); //~V
-                        SDstorage.println(" ");
-                    }
-                    else
-                    {
-                        SD_reconnect();
-                        SDstorage = SD.open(filename, FILE_WRITE);
-                    }
-
-                    /*
-                      Serial communication
-                    */
-
-                    Serial.print(timebuffer);
-                    Serial.print(" ");
-                    Serial.print(t);
-                    Serial.print(" ");
-                    Serial.print(rh);
-                    Serial.print(" ");
-                    Serial.print(p);
-                    Serial.print(" ");
-                    Serial.print(bme.readAltitude(SEALEVELPRESSURE_HPA));
-                    Serial.print(v_CO_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_CO_a, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_SO2_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_SO2_a, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_NO2_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_NO2_a, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_OX_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_OX_a, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_pid_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.print(v_co2_w, 3);
-                    Serial.print(" "); //~V
-                    Serial.println(" ");
-
-                    delay(2000);
-                    /*
-                        if (hour() * 60 + minute() > previous_hour * 60 + previous_minute) {
-                          lcd.clear();
-
-                          char timecaller1[10], timecaller2[10];
-                          sprintf(timecaller1, "Minute %d", hour() * 60 + minute());
-                          sprintf(timecaller2, "%d left", numberOfLoop * minute2run - hour() * 60 - minute());
-                          lcd.setCursor(0, 0); lcd.print(timecaller1);
-                          lcd.setCursor(0, 1); lcd.print(timecaller2);
-                          delay(1000);
-                        }
-                    */
-                } while (timeDuringRecording - startTimeOfThisLoop < minute2run * 60 && !stopReading); // if time elapsed does not exceed specified duration
-
-                SDstorage.flush();
-
-                // Check if the current file size exceeds our threshold.
-                if (SDstorage.size() > MAX_FILE_SIZE)
-                {
-                    SDstorage.close();
-                    delay(500);
-                    if (SDstorage)
-                    {
-                        Serial.print("321\n");
-                    }
-                    else
-                    {
-                        // Build a new name by appending an incremental suffix.
-                        // For example, if filename is "WDATA1.txt", we try "WDATA1_1.txt", "WDATA1_2.txt", etc.
-                        int suffix = 1;
-                        String newName;
-                        do
-                        {
-                            // Remove the ".txt" extension and add "_" plus the suffix and then ".txt"
-                            newName = filename.substring(0, filename.length() - 4) + "_" + String(suffix) + ".txt";
-                            suffix++;
-                        } while (SD.exists(newName));
-
-                        // Rename the current file.
-                        // filename = newName;
-                        Serial.print(newName);
-                        Serial.print(filename);
-
-                        // Reopen a fresh file with the original filename for new data.
-                        SDstorage = SD.open(newName, FILE_WRITE);
-                        delay(500);
-                        if (!SDstorage)
-                            Serial.print("failed");
-                    }
-                }
-            }
-        }
-        else
-        {
-            lcd.clear();
-            lcd.setCursor(0, 0);
-            if (stopReading)
-            {
-                lcd.print("SD card stopped");
-                Serial.println("SD card reading stopped");
-            }
-            else
-            {
-                lcd.print("SD module fails");
-                Serial.println("SD module fails");
-                SD_reconnect();
-            }
-
-            // RED for error
-            int colorR = 236;
-            int colorG = 0;
-            int colorB = 0;
-
-            lcd.setRGB(colorR, colorG, colorB);
-            delay(2000);
-        }
-    }
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    // Print headers to serial for debugging
+    Serial.print("Time");
+    Serial.print(" ");
+    Serial.print("Temperature(C)");
+    Serial.print(" ");
+    Serial.print("Humidity(%)");
+    Serial.print(" ");
+    Serial.print("Pressure(pa)");
+    Serial.print(" ");
+    Serial.print("CO_W");
+    Serial.print(" ");
+    Serial.print("CO_A");
+    Serial.print(" ");
+    Serial.print("SO2_W");
+    Serial.print(" ");
+    Serial.print("SO2_A");
+    Serial.print(" ");
+    Serial.print("NO2_W");
+    Serial.print(" ");
+    Serial.print("NO2_A");
+    Serial.print(" ");
+    Serial.print("OX_W");
+    Serial.print(" ");
+    Serial.print("OX_A");
+    Serial.print(" ");
+    Serial.print("PID_W");
+    Serial.print(" ");
+    Serial.print("CO2_W");
+    Serial.print(" ");
+    Serial.println(" ");
+    // record sensor readings
+    lcd.print("Start recording");
+    delay(1000);
+    lcd.clear();
+    lcd.print("3");
+    delay(1000);
+    lcd.print("2");
+    delay(1000);
+    lcd.print("1");
+    delay(1000);
+    lcd.clear();
 }
 
-void loop() {}
+JsonDocument doc;
+String jsonData;
+void loop()
+{
+    // Process any incoming commands from ESP32
+    processEspCommands();
+    
+    char timebuffer_save[25];
+    char timebuffer[10];
+    char number2display[50]; // number to display (10 * original voltage) on LCD monitor
+
+    // Display sensor values on LCD - use the volatile variables
+    // that are updated by the timer
+
+    /*
+       LCD screen display
+    */
+    long counter = 0;
+    while (counter < 2)
+    {
+        // Process ESP32 commands while in display loop to maintain responsiveness
+        processEspCommands();
+        
+        lcd.clear();
+
+        lcd.setCursor(0, 0);
+        sprintf(timebuffer_save, "%02d %02d %02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
+        sprintf(timebuffer, "%02d:%02d:%02d", hour(), minute(), second());
+        lcd.print(timebuffer);
+        lcd.print(' ');
+        lcd.print(int(t)); // Use the volatile variables updated by the timer
+        lcd.print(' ');
+        lcd.print(int(rh)); // Use the volatile variables updated by the timer
+        lcd.print(' ');
+
+        // Use the volatile variables from the timer for display
+        if (counter == 0)
+        {
+            lcd.print('W'); // indicate it is for working voltage
+            sprintf(number2display, "%02d %02d %02d %02d %03d", 
+                    int(v_CO_w * 10), int(v_SO2_w * 10), int(v_NO2_w * 10), 
+                    int(v_OX_w * 10), int(v_pid_w * 100));
+        }
+        else
+        {
+            lcd.print('A'); // indicate it is for auxiliary voltage
+            sprintf(number2display, "%02d %02d %02d %02d %03d", 
+                    int(v_CO_a * 10), int(v_SO2_a * 10), int(v_NO2_a * 10), 
+                    int(v_OX_a * 10), int(v_co2_w * 100));
+        }
+        lcd.setCursor(0, 1); // 2nd line, 1st row
+        lcd.print(number2display);
+
+        delay(1000);
+        counter++;
+    }
+
+    delay(1000); // Reduced from 5000 to allow more frequent checking for commands
+}

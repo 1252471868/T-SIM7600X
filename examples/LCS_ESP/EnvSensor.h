@@ -8,15 +8,15 @@
 
 // Include libraries
 #include <Wire.h>
-#include "rgb_lcd.h"
+// #include "rgb_lcd.h"
 #include <SPI.h>
 #include <SD.h>
 #include <Time.h>
 #include <TimeLib.h>
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
-#include <TinyGsmClient.h>
-#include <BlynkSimpleTinyGSM.h>
+
+#include <ArduinoJson.h>
 
 // Blynk configuration
 #define BLYNK_TEMPLATE_ID "TMPL6kFMi5YBK"
@@ -27,6 +27,9 @@
 #define TINY_GSM_MODEM_SIM7600
 
 // Modem configuration
+#define SerialAT Serial1
+#define SerialMon Serial
+
 #define MODEM_TX            27
 #define MODEM_RX            26
 #define MODEM_PWRKEY        4
@@ -41,6 +44,10 @@
 #define SD_MOSI             15
 #define SD_SCLK             14
 #define SD_CS               13
+
+// Arduino UART configuration
+#define ARDUINO_UART_RX 18
+#define ARDUINO_UART_TX 19
 
 // LED Pin
 #define LED_PIN             12
@@ -67,6 +74,25 @@ const long numberOfLoop = 100000; // number of loops to run
 // Define the maximum file size (in bytes)
 const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 
+// Command definitions for Arduino-ESP32 communication
+#define CMD_INFO        "INFO"     // Check communication status
+#define CMD_DATA        "DATA"     // Request sensor data
+#define CMD_RESET       "RESET"    // Reset command
+#define CMD_ACK         "ACK"      // Acknowledgment
+#define CMD_NONET       "NONET"    // No internet mode query
+#define CMD_YES         "YES"      // Positive response
+#define CMD_NO          "NO"       // Negative response
+#define CMD_COMPLETE    "COMPLETE" // Data successfully received
+#define CMD_FAIL        "FAIL"     // Command failed
+
+// Timeout and retry settings
+#define CMD_TIMEOUT     2000       // Command timeout in milliseconds
+#define MAX_RETRIES     5          // Maximum retries for commands
+#define COMM_CHECK_MS   1000       // Communication check interval
+
+// Auto-reset control
+#define AUTO_RESET_ENABLED true    // Enable auto reset by default
+
 // GPRS credentials
 extern char apn[];
 extern char user[];
@@ -79,9 +105,16 @@ void setupModem();
 void setupBlynk();
 void setupSD();
 void setupTime();
-void readSensors();
+void readSensorsFromArduino();
 void logToSD();
 void reconnectSD();
 float readBattery(uint8_t pin);
+
+// Communication protocol functions
+bool sendCommand(const char* cmd, String& response, unsigned long timeout = CMD_TIMEOUT);
+bool sendCommandWithRetry(const char* cmd, String& response, int maxRetries = MAX_RETRIES);
+void processIncomingCommands();
+void resetSystem();
+bool checkNoInternetMode();
 
 #endif // ENV_SENSOR_H 
