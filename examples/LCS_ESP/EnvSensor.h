@@ -71,6 +71,27 @@ const float voltageSupply = 5.0; // voltages
 const long minute2run = 15;       // minutes in each loop
 const long numberOfLoop = 100000; // number of loops to run
 
+// Virtual pin definitions for Blynk
+#define VPIN_TEMP V0             // Temperature
+#define VPIN_PRESSURE V1         // Pressure
+#define VPIN_HUMIDITY V4         // Humidity
+#define VPIN_BATTERY V2          // Battery Percentage
+#define VPIN_SD_LOGGING V3       // SD Logging toggle (BLYNK_WRITE)
+#define VPIN_CO_W V5             // CO Working Electrode
+#define VPIN_CO_A V11             // CO Auxiliary Electrode
+#define VPIN_SO2_W V6            // SO2 Working Electrode
+#define VPIN_SO2_A V12            // SO2 Auxiliary Electrode
+#define VPIN_NO2_W V7            // NO2 Working Electrode
+#define VPIN_NO2_A V13            // NO2 Auxiliary Electrode
+#define VPIN_OX_W V8            // OX Working Electrode
+#define VPIN_OX_A V14            // OX Auxiliary Electrode
+#define VPIN_PID_W V9           // PID Working Electrode
+#define VPIN_CO2_W V10           // CO2 Working Electrode 
+#define VPIN_RESET V17           // Reset toggle (BLYNK_WRITE)
+#define VPIN_AUTO_RESET V16      // Auto-Reset toggle (BLYNK_WRITE)
+#define VPIN_ARDUINO_STATUS V15  // Arduino connection status (1=OK, 0=Fail)
+#define VPIN_SD_STATUS V18       // SD card status (1=OK, 0=Fail)
+
 // Define the maximum file size (in bytes)
 const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 
@@ -79,6 +100,7 @@ const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 #define CMD_DATA        "DATA"     // Request sensor data
 #define CMD_RESET       "RESET"    // Reset command
 #define CMD_ACK         "ACK"      // Acknowledgment
+#define CMD_CONNECTED   "CONNECTED" // Connected to Blynk
 #define CMD_NONET       "NONET"    // No internet mode query
 #define CMD_YES         "YES"      // Positive response
 #define CMD_NO          "NO"       // Negative response
@@ -86,7 +108,9 @@ const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 #define CMD_FAIL        "FAIL"     // Command failed
 
 // Timeout and retry settings
-#define CMD_TIMEOUT     2000       // Command timeout in milliseconds
+#define BLYNK_CONNECT_TIMEOUT 20000
+#define BLYNK_SEND_INTERVAL 10000
+#define CMD_TIMEOUT     5000       // Command timeout in milliseconds
 #define MAX_RETRIES     5          // Maximum retries for commands
 #define COMM_CHECK_MS   1000       // Communication check interval
 
@@ -111,8 +135,8 @@ void reconnectSD();
 float readBattery(uint8_t pin);
 
 // Communication protocol functions
-bool sendCommand(const char* cmd, String& response, unsigned long timeout = CMD_TIMEOUT);
-bool sendCommandWithRetry(const char* cmd, String& response, int maxRetries = MAX_RETRIES);
+bool sendCommand(const char* cmd, const String& data, unsigned long timeout = CMD_TIMEOUT);
+bool sendCommandWithRetry(const char* cmd, const String& data, int maxRetries = MAX_RETRIES);
 void processIncomingCommands();
 void resetSystem();
 bool checkNoInternetMode();

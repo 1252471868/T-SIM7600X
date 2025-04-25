@@ -346,10 +346,10 @@ void setup()
     //     Serial.println("Could not find a valid BMP085 sensor, check wiring!");
     //     while (1) {}
     // }
-
-
-
-    Blynk.begin(auth, modem, apn, user, pass);
+    Blynk.config(modem, auth, "sgp1.blynk.cloud");
+    Blynk.connectNetwork(apn, user, pass);
+    Blynk.connect(BLYNK_TIMEOUT_MS);
+    // Blynk.begin(auth, modem, apn, user, pass);
     // Change interval to 10 seconds (10000L milliseconds)
     timer.setInterval(10000L, sendSensor);
 }
