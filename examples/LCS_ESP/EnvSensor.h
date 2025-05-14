@@ -18,10 +18,21 @@
 
 #include <ArduinoJson.h>
 
+#define BOX_NUM   4
+
 // Blynk configuration
 #define BLYNK_TEMPLATE_ID "TMPL6kFMi5YBK"
 #define BLYNK_TEMPLATE_NAME "EnvSensor"
+#if BOX_NUM == 1
+#define BLYNK_AUTH_TOKEN "iihKlmC4B_tYYOZZS68Fm9H8PUJX7Ed_" // Replace with your token
+#elif BOX_NUM == 2
 #define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI"  // Replace with your token
+#elif BOX_NUM == 3
+#define BLYNK_AUTH_TOKEN "tzqMA1jqbtyY2iCwSWi6u34KtkcQKZ0L" // Replace with your token
+#elif BOX_NUM == 4
+#define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI"  // Replace with your token
+
+#endif
 
 // Select modem type
 #define TINY_GSM_MODEM_SIM7600
@@ -140,5 +151,6 @@ bool sendCommandWithRetry(const char* cmd, const String& data, int maxRetries = 
 void processIncomingCommands();
 void resetSystem();
 bool checkNoInternetMode();
+void reconnectInternetBlynk();
 
 #endif // ENV_SENSOR_H 

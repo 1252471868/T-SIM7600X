@@ -46,6 +46,9 @@ bool blynkConnected = false;        // Flag indicating connection status to Blyn
 #ifndef WDT_TIMEOUT
 #define WDT_TIMEOUT 60 // Default watchdog timeout 60s
 #endif
+#ifndef RECONNECT_INTERVAL
+#define RECONNECT_INTERVAL 1200000 // Default reconnect interval 20 minutes (20 * 60 * 1000)
+#endif
 
 // HardwareSerial for communication with Arduino Mega
 HardwareSerial ArduinoSerial(2); // Using UART2 (GPIO 16=RX, 17=TX)
@@ -574,9 +577,9 @@ bool setupTimeWithRetry() {
  * @brief Creates a new data filename for the SD card.
  * 
  * Generates a filename based on the current date and time in the format
- * "/YYYYMMDD HHMMSS.txt" if the system time is valid (year > 2020).
+ * "/boxX_YYYYMMDD HHMMSS.txt" if the system time is valid (year > 2020).
  * If the time is not valid, it falls back to a numbered filename format
- * "/DATn.txt", incrementing 'n' until an unused filename is found.
+ * "/boxX_DATn.txt", incrementing 'n' until an unused filename is found.
  * 
  * @return String The generated filename, including the leading slash.
  */
@@ -586,17 +589,17 @@ String createDataFilename() {
   String newFilename;
   
   if (timeValid) {
-    // Time is valid, use timestamp format
-    sprintf(dateTimeFilename, "/%04d%02d%02d_%02d%02d%02d.txt", // Use underscore instead of space
-            year(), month(), day(), hour(), minute(), second());
+    // Time is valid, use timestamp format with box number prefix
+    sprintf(dateTimeFilename, "/box%d_%04d%02d%02d_%02d%02d%02d.txt", 
+            BOX_NUM, year(), month(), day(), hour(), minute(), second());
     newFilename = String(dateTimeFilename);
     Serial.println("Using timestamp filename: " + newFilename);
   } else {
-    // Time not set, use fallback numbered format
+    // Time not set, use fallback numbered format with box number prefix
     Serial.println("Time not set, using fallback filename format.");
     bool fileFound = false;
     int count = 0;
-    String baseFilename = "/DAT";
+    String baseFilename = "/box" + String(BOX_NUM) + "_DAT";
     while (!fileFound) {
       String testFilename = baseFilename + String(count) + ".txt";
       if (SD.exists(testFilename)) {
@@ -823,6 +826,66 @@ void logToSD() {
 }
 
 /**
+ * @brief Attempts to reconnect to GPRS and Blynk.
+ * This function is called periodically by a timer.
+ */
+void reconnectInternetBlynk() {
+  esp_task_wdt_reset(); // Reset watchdog at the beginning
+  Serial.println("Checking Internet/Blynk connection status...");
+
+  if (!modem.isNetworkConnected()) {
+    Serial.println("GPRS network is not connected. Attempting to reconnect...");
+    internetAvailable = false; // Assume not available until successfully reconnected
+    blynkConnected = false;  // Blynk cannot be connected if GPRS is down
+
+    if (Blynk.connectNetwork(apn, user, pass)) {
+      Serial.println("GPRS reconnected successfully.");
+      internetAvailable = true; // GPRS is back
+      // Now try to connect to Blynk
+      Serial.println("Attempting to connect to Blynk server...");
+      if (Blynk.connect(BLYNK_CONNECT_TIMEOUT)) {
+        Serial.println("Successfully reconnected to Blynk!");
+        blynkConnected = true;
+        sendCommand(CMD_CONNECTED, "", CMD_TIMEOUT); // Notify Arduino
+      } else {
+        Serial.println("Failed to reconnect to Blynk server after GPRS re-established.");
+        blynkConnected = false; // Mark Blynk as disconnected
+      }
+    } else {
+      Serial.println("Failed to reconnect to GPRS network.");
+      internetAvailable = false;
+      blynkConnected = false;
+    }
+  } else if (!Blynk.connected()) { // GPRS is connected, but Blynk is not
+    Serial.println("GPRS connected, but Blynk is not. Attempting to reconnect Blynk...");
+    internetAvailable = true; // GPRS is okay
+    blynkConnected = false; // Mark Blynk as disconnected before attempting reconnect
+
+    if (Blynk.connect(BLYNK_CONNECT_TIMEOUT)) {
+      Serial.println("Successfully reconnected to Blynk!");
+      blynkConnected = true;
+      sendCommand(CMD_CONNECTED, "", CMD_TIMEOUT); // Notify Arduino
+    } else {
+      Serial.println("Failed to reconnect to Blynk server.");
+      blynkConnected = false;
+    }
+  } else {
+    Serial.println("Internet and Blynk connection appear to be active.");
+    // Ensure flags are consistent if somehow they got out of sync
+    if (!internetAvailable) internetAvailable = true;
+    if (!blynkConnected) blynkConnected = true;
+  }
+
+  // Check if reconnection attempts failed overall
+  if (!blynkConnected) {
+    Serial.println("Failed to establish Blynk connection after reconnection attempts. Resetting ESP32.");
+    resetSystem(); // Reset the ESP32 if still not connected
+  }
+
+  esp_task_wdt_reset(); // Reset watchdog at the end
+}
+
+/**
  * @brief Main setup function, runs once on boot.
  * Initializes serial communication, watchdog, LED, Arduino communication,
  * modem, network time, SD card, Blynk connection, and timers.
@@ -873,39 +936,38 @@ void setup() {
 
   // Initialize Blynk connection
   Serial.println("Initializing Blynk connection...");
-  bool blynkInitialized = false;
   Blynk.config(modem, auth, BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
   Serial.println("Connecting to GPRS network...");
   if(Blynk.connectNetwork(apn, user, pass)) {
       Serial.println("GPRS network connected. Connecting to Blynk...");
+      internetAvailable = true; // GPRS connected
       if (Blynk.connect(BLYNK_CONNECT_TIMEOUT)) { // Timeout for Blynk connection
-          blynkInitialized = true;
-          blynkConnected = true; // Set flag only on successful connect
+          blynkConnected = true; // Set global flag only on successful connect
           Serial.println("Successfully connected to Blynk!");
           sendCommand(CMD_CONNECTED, "", CMD_TIMEOUT); // Notify Arduino
       } else {
           Serial.println("Failed to connect to Blynk server.");
+          blynkConnected = false; // Ensure it's false
       }
   } else {
       Serial.println("Failed to connect to GPRS network.");
+      internetAvailable = false; // GPRS connection failed
+      blynkConnected = false;    // Blynk cannot be connected
   }
   esp_task_wdt_reset(); // Reset watchdog after Blynk attempt
 
-  // Fallback logic if Blynk connection failed
-  if (!blynkInitialized) {
-    Serial.println("Blynk initialization failed.");
+  // Fallback logic if Blynk connection failed initially
+  if (!blynkConnected) { // Check the global blynkConnected flag
+    Serial.println("Initial Blynk connection failed.");
     // Check if Arduino allows operation without internet
     if (checkNoInternetMode()) {
-      internetAvailable = false;
+      internetAvailable = false; // Explicitly set as we are in no internet mode
       Serial.println("Continuing in No Internet mode as accepted by Arduino.");
     } else {
       // Arduino requires internet or didn't respond - critical failure
-      Serial.println("CRITICAL: Arduino did not accept No Internet mode. Halting system.");
-      // Infinite loop with LED blink to indicate fatal error
-      while (1) { 
-        digitalWrite(LED_PIN, !digitalRead(LED_PIN)); 
-        delay(200); 
-      }
+      Serial.println("CRITICAL: Arduino did not accept No Internet mode. System will attempt periodic reconnections.");
+      // System will not halt, but rely on reconnectInternetBlynk
+      // Consider a more prominent visual indicator for this state if needed
     }
   }
   
@@ -913,6 +975,8 @@ void setup() {
   Serial.println("Setting up timers...");
   // Request data from Arduino every BLYNK_SEND_INTERVAL (e.g., 10 seconds)
   timer.setInterval(BLYNK_SEND_INTERVAL, sendSensorDataCMD); 
+  // Add timer for periodic internet/Blynk reconnection check
+  timer.setInterval(RECONNECT_INTERVAL, reconnectInternetBlynk); // Check every 20 minutes
   // Note: processIncomingCommands is called directly in loop() for responsiveness
   // timer.setInterval(COMM_CHECK_MS, processIncomingCommands); // Alternative: run command processing on timer
 
@@ -929,12 +993,12 @@ void loop() {
   // Reset watchdog timer at the start of each loop iteration
   esp_task_wdt_reset(); 
 
-  // Run Blynk tasks if internet is available and connected
+  // Run Blynk tasks if internet is available AND blynk is actually connected
   if (internetAvailable && blynkConnected) {
     Blynk.run();
   }
   
-  // Run tasks scheduled by BlynkTimer (e.g., sendSensorDataCMD)
+  // Run tasks scheduled by BlynkTimer (e.g., sendSensorDataCMD, reconnectInternetBlynk)
   timer.run();
   
   // Continuously process incoming commands from Arduino
