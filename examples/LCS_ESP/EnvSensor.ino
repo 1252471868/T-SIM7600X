@@ -44,10 +44,10 @@ bool blynkConnected = false;        // Flag indicating connection status to Blyn
 #define COMM_TIMEOUT 60000 // Default communication timeout (e.g., 60 seconds)
 #endif
 #ifndef WDT_TIMEOUT
-#define WDT_TIMEOUT 60 // Default watchdog timeout 60s
+#define WDT_TIMEOUT 120 // Default watchdog timeout 60s
 #endif
 #ifndef RECONNECT_INTERVAL
-#define RECONNECT_INTERVAL 1200000 // Default reconnect interval 20 minutes (20 * 60 * 1000)
+#define RECONNECT_INTERVAL 60*1000*10 // Default reconnect interval 10 minutes (60 * 1000)
 #endif
 
 // HardwareSerial for communication with Arduino Mega
@@ -936,7 +936,7 @@ void setup() {
 
   // Initialize Blynk connection
   Serial.println("Initializing Blynk connection...");
-  Blynk.config(modem, auth, BLYNK_DEFAULT_DOMAIN, BLYNK_DEFAULT_PORT);
+  Blynk.config(modem, auth, BLYNK_DOMAIN, BLYNK_PORT);
   Serial.println("Connecting to GPRS network...");
   if(Blynk.connectNetwork(apn, user, pass)) {
       Serial.println("GPRS network connected. Connecting to Blynk...");

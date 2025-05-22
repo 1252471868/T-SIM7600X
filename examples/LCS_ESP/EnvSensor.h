@@ -23,6 +23,8 @@
 // Blynk configuration
 #define BLYNK_TEMPLATE_ID "TMPL6kFMi5YBK"
 #define BLYNK_TEMPLATE_NAME "EnvSensor"
+#define BLYNK_DOMAIN "sgp1.blynk.cloud"
+#define BLYNK_PORT 8080
 #if BOX_NUM == 1
 #define BLYNK_AUTH_TOKEN "iihKlmC4B_tYYOZZS68Fm9H8PUJX7Ed_" // Replace with your token
 #elif BOX_NUM == 2
