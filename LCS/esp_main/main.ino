@@ -99,10 +99,7 @@ void loop() {
 
     // Process incoming commands from second ESP32 (Bluetooth for Pump Control)
 #ifdef ENABLE_PUMP_CONTROL
-    if (ESP_BT.hasClient())
-    {                                    // Check if a Bluetooth client is connected
-        processIncomingCommands(ESP_BT); // Use the common command processor
-    }
+    handlePumpControlCommands(); // Handle pump ESP32 Bluetooth communication
 #endif // ENABLE_PUMP_CONTROL
     
 } 

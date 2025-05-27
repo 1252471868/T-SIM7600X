@@ -6,6 +6,8 @@
 #include <HardwareSerial.h>
 #include "BluetoothSerial.h" // <<< Added for Bluetooth
 
+#define BOX_NAME "box3"
+
 // Select modem type
 
 // Modem configuration
@@ -100,7 +102,7 @@ const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 #define AUTO_RESET_ENABLED true // Enable auto reset by default
 
 // Feature Flags
-// #define ENABLE_PUMP_CONTROL // Uncomment to enable Bluetooth pump control features
+#define ENABLE_PUMP_CONTROL // Enable Bluetooth pump control features
 
 extern TinyGsm modem;
 extern unsigned long lastCommTime;

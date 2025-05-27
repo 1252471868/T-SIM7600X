@@ -16,6 +16,11 @@ bool setupPumpControl();
  */
 void handlePumpControlCommands();
 
+/**
+ * @brief Sends current sensor data to pump ESP32 via Bluetooth
+ */
+void sendSensorDataToPump();
+
 #endif // ENABLE_PUMP_CONTROL
 
 #endif // PUMP_CONTROL_H
