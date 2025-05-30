@@ -21,8 +21,6 @@ double v_pid_w = 0.0, v_co2_w = 0.0;
 // Hardware Communication Objects
 HardwareSerial ArduinoSerial(2); // UART2 (GPIO 16=RX, 17=TX) for Arduino communication
 
-BluetoothSerial ESP_BT; // <<< Added Bluetooth Serial object
-
 volatile bool stopReading = false;                   // Defined here now
 volatile bool autoResetEnabled = AUTO_RESET_ENABLED; // Assuming AUTO_RESET_ENABLED in EnvSensor.h
 bool blynkConnected = false;                         // Defined here now

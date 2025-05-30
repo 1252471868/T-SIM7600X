@@ -6,8 +6,9 @@
 // Function declarations
 bool initializeBlynk();
 void runBlynk();
-void sendSensorData();
-void sendSensorDataToBlynk();
-void sendVOCDataToPumpESP32();
+void updateBlynkStatus();
+void sendPumpDataToBlynk();
+void checkVOCLevels();
+void checkTimedOperations();
 
 #endif // BLYNK_INTERFACE_H 

@@ -4,11 +4,26 @@
 #define TINY_GSM_MODEM_SIM7600 // <<< Adjust if your modem is different
 #include <TinyGsmClient.h>     // Required for TinyGsm object
 #include <HardwareSerial.h>
-#include "BluetoothSerial.h" // <<< Added for Bluetooth
 
+#define BOX_NUM 3
 #define BOX_NAME "box3"
+#define PUMP_NUM 1  // Which pump ESP32 to send VOC data to
 
-// Select modem type
+// Blynk configuration
+#define BLYNK_TEMPLATE_ID "TMPL6kFMi5YBK"
+#define BLYNK_TEMPLATE_NAME "EnvSensor"
+#define BLYNK_DOMAIN "sgp1.blynk.cloud"
+#define BLYNK_PORT 8080
+#if BOX_NUM == 1
+#define BLYNK_AUTH_TOKEN "iihKlmC4B_tYYOZZS68Fm9H8PUJX7Ed_" // Replace with your token
+#elif BOX_NUM == 2
+#define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI" // Replace with your token
+#elif BOX_NUM == 3
+#define BLYNK_AUTH_TOKEN "tzqMA1jqbtyY2iCwSWi6u34KtkcQKZ0L" // Replace with your token
+#elif BOX_NUM == 4
+#define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI" // Replace with your token
+
+#endif
 
 // Modem configuration
 #define SerialAT Serial1
@@ -96,13 +111,13 @@ const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 #define BLYNK_SEND_INTERVAL 10000
 #define CMD_TIMEOUT 5000  // Command timeout in milliseconds
 #define MAX_RETRIES 5     // Maximum retries for commands
-#define WDT_TIMEOUT 60000 // Watchdog timeout in milliseconds
+#define WDT_TIMEOUT 180000 // Watchdog timeout in milliseconds
 
 // Auto-reset control
 #define AUTO_RESET_ENABLED true // Enable auto reset by default
 
 // Feature Flags
-#define ENABLE_PUMP_CONTROL // Enable Bluetooth pump control features
+// #define ENABLE_PUMP_CONTROL // Disabled - using HTTP API instead
 
 extern TinyGsm modem;
 extern unsigned long lastCommTime;
@@ -112,7 +127,6 @@ extern double v_NO2_w, v_NO2_a, v_OX_w, v_OX_a;
 extern double v_pid_w, v_co2_w;
 
 extern HardwareSerial ArduinoSerial;
-extern BluetoothSerial ESP_BT;
 extern volatile bool internetAvailable;
 
 extern bool blynkConnected;

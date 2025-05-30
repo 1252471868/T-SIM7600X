@@ -2,6 +2,7 @@
 
 // TinyGSM and hardware objects
 TinyGsm modem(SerialAT);
+HardwareSerial ArduinoSerial(2);  // Using Serial2 for Arduino communication
 
 // Network and connection status
 volatile bool internetAvailable = false;
@@ -10,32 +11,30 @@ bool blynkConnected = false;
 // Pump system global variables
 PumpOperation pumpOp = {
   .enabled = false,
-  .flowRate = 128,              // Default to 50% speed (128/255)
+  .flowRate = 255,              // Default to full speed
   .mode = PUMP_OFF,
   .startTime = 0,
-  .duration = 0,                // 0 = continuous operation for manual mode
+  .duration = 0,
   .isInflating = true           // Default to inflation mode
 };
 
 VOCMonitoring vocMonitor = {
+  .autoEnabled = false,
   .threshold = 100.0,           // Default VOC threshold
   .currentLevel = 0.0,
-  .lastCheck = 0,
-  .lastUpdate = 0
+  .lastCheck = 0
 };
 
 TimedOperation timedOp = {
-  .startHour = 9,               // Default start time 09:00:00
-  .startMinute = 0,
-  .startSecond = 0,
-  .endHour = 17,                // Default end time 17:00:00
-  .endMinute = 0,
-  .endSecond = 0,
-  .isActive = false,
-  .lastSampleStart = 0
+  .enabled = false,
+  .startTime = 0,
+  .samplingDuration = 30000,    // Default 30 seconds
+  .scheduled = false
 };
 
 // Communication status
+unsigned long lastArduinoComm = 0;
+bool arduinoConnected = false;
 unsigned long lastMainESP32Comm = 0;
 bool mainESP32Connected = false;
 

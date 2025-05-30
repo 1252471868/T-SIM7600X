@@ -21,6 +21,18 @@ void handlePumpControlCommands();
  */
 void sendSensorDataToPump();
 
+/**
+ * @brief Checks if pump ESP32 is connected via Bluetooth
+ * @return true if pump ESP32 is connected, false otherwise
+ */
+bool isPumpESP32Connected();
+
+/**
+ * @brief Maintains Bluetooth connection with pump ESP32
+ * Should be called periodically in main loop
+ */
+void maintainPumpConnection();
+
 #endif // ENABLE_PUMP_CONTROL
 
 #endif // PUMP_CONTROL_H

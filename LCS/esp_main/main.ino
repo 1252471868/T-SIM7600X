@@ -33,13 +33,7 @@ void setup() {
 
     // Initialize watchdog
     initializeWatchdog();
-    // Initialize Bluetooth Serial for Pump Control
-#ifdef ENABLE_PUMP_CONTROL
-    setupPumpControl();
-    resetWatchdog();
-#endif // ENABLE_PUMP_CONTROL
-
-
+    
     // Initialize indicator LED (set high initially)
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, HIGH);
@@ -96,10 +90,5 @@ void loop() {
 
     // Process incoming commands from Arduino (UART)
     processIncomingCommands(ArduinoSerial); // Simplified call
-
-    // Process incoming commands from second ESP32 (Bluetooth for Pump Control)
-#ifdef ENABLE_PUMP_CONTROL
-    handlePumpControlCommands(); // Handle pump ESP32 Bluetooth communication
-#endif // ENABLE_PUMP_CONTROL
     
 } 

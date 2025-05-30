@@ -7,14 +7,14 @@
 
 /**
  * @brief Main setup function, runs once on boot.
- * Initializes serial communication, watchdog, LED, pump control,
- * modem, network time, and Blynk connection.
+ * Initializes serial communication, watchdog, LED, Arduino communication,
+ * modem, network time, Blynk connection, and pump systems.
  */
 void setup() {
     // Initialize serial console for debugging
     Serial.begin(UART_BAUD);
     delay(2000); // Increased wait for serial monitor connection and system stability
-    Serial.println("\n--- ESP32 Direct Pump Controller Starting ---");
+    Serial.println("\n--- ESP32 Pump Controller Starting ---");
     
     // Check initial memory status
     Serial.print("Initial free heap: ");
@@ -31,15 +31,16 @@ void setup() {
     digitalWrite(LED_PIN, HIGH);
     resetWatchdog();
 
-    // Initialize direct pump control
-    Serial.println("Initializing direct pump control...");
-    initializePumpControl();
+    // Initialize UART for Arduino communication first (lightweight)
+    Serial.println("Initializing UART for Arduino communication...");
+    ArduinoSerial.begin(ARDUINO_BAUD, SERIAL_8N1, ARDUINO_UART_RX, ARDUINO_UART_TX);
+    delay(500); // Allow UART to settle
     resetWatchdog();
 
-    // Verify pump hardware
-    bool isPumpHardwareOk = verifyPumpHardware();
-    if (!isPumpHardwareOk) {
-        Serial.println("Warning: Pump hardware verification failed. System will continue, but pump control may be unavailable.");
+    // Try to verify communication with Arduino
+    bool isArduinoCommOk = verifyArduinoConnection();
+    if (!isArduinoCommOk) {
+        Serial.println("Warning: Initial Arduino communication failed. System will continue, but pump control may be unavailable.");
     }
     resetWatchdog();
 
@@ -65,7 +66,6 @@ void setup() {
     Serial.println("Initializing pump control systems...");
     pumpOp.mode = PUMP_OFF;
     pumpOp.enabled = false;
-    pumpOp.flowRate = 128; // Default 50% flow rate
     resetWatchdog();
     
     Serial.println("--- Setup Complete ---");
@@ -89,13 +89,6 @@ void loop() {
 
     // Process pump operations and safety checks
     processPumpOperations();
-
-    // Print pump status every 30 seconds for debugging
-    static unsigned long lastStatusPrint = 0;
-    if (millis() - lastStatusPrint > 30000) {
-        lastStatusPrint = millis();
-        printPumpStatus();
-    }
 
     // Small delay to prevent overwhelming the system
     delay(10);

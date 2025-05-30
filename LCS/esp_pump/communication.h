@@ -13,6 +13,5 @@ bool sendCommandWithRetry(Stream& serialPort, const char* cmd, const String& dat
 bool verifyArduinoCommunication(Stream& serialPort);
 bool checkNoInternetMode(Stream& serialPort);
 void sendSensorDataCMD(Stream& serialPort);
-void sendSensorDataToBlynk();
 
 #endif // COMMUNICATION_H 

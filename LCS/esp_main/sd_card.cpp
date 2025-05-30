@@ -23,8 +23,8 @@ String createDataFilename() {
 
     if (timeValid) {
         // Time is valid, use timestamp format with BOX_NAME prefix
-        sprintf(dateTimeFilename, "/%s_%04d%02d%02d_%02d%02d%02d.txt", // Use BOX_NAME prefix
-                BOX_NAME, year(), month(), day(), hour(), minute(), second());
+        sprintf(dateTimeFilename, "/box%d_%04d%02d%02d_%02d%02d%02d.txt", // Use BOX_NAME prefix
+                BOX_NUM, year(), month(), day(), hour(), minute(), second());
         newFilename = String(dateTimeFilename);
         Serial.println("Using timestamp filename: " + newFilename);
     } else {
@@ -32,7 +32,7 @@ String createDataFilename() {
         Serial.println("Time not set, using fallback filename format.");
         bool fileFound = false;
         int count = 0;
-        String baseFilename = "/" + String(BOX_NAME) + "_DAT";
+        String baseFilename = "/box" + String(BOX_NUM) + "_DAT";
         while (!fileFound) {
             String testFilename = baseFilename + String(count) + ".txt";
             // Need to ensure SD is initialized before calling exists

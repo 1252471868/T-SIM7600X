@@ -13,12 +13,20 @@
  */
 bool setupPumpControl() {
     Serial.println("Initializing Bluetooth Serial for Pump Control...");
-    if (!ESP_BT.begin("ESP32_EnvSensor_BT")) { // Start Bluetooth with a name
-      Serial.println("An error occurred initializing Pump Control Bluetooth");
+    
+    // Initialize Bluetooth in Server/Slave mode to wait for pump ESP32 connection
+    if (!ESP_BT.begin("ESP32_EnvSensor_BT")) { // Server mode (no master parameter)
+      Serial.println("An error occurred initializing Pump Control Bluetooth in Server mode");
       return false;
     } else {
-      Serial.println("Pump Control Bluetooth initialized. Ready to pair with ESP32_PumpController_BT");
-      Serial.println("Waiting for pump controller to connect...");
+      Serial.println("Pump Control Bluetooth initialized in Server mode");
+      Serial.println("Waiting for ESP32_PumpController_BT to connect...");
+      
+      // Give Bluetooth time to initialize
+      delay(2000);
+      
+      Serial.println("Bluetooth server ready - pump ESP32 can now connect");
+      
       return true;
     }
 }
@@ -28,6 +36,17 @@ bool setupPumpControl() {
  * Processes DATA requests from pump ESP32 and sends sensor data response.
  */
 void handlePumpControlCommands() {
+    // Check for new Bluetooth connections
+    static bool wasConnected = false;
+    bool isConnected = ESP_BT.hasClient();
+    
+    if (isConnected && !wasConnected) {
+        Serial.println("Pump ESP32 connected via Bluetooth!");
+    } else if (!isConnected && wasConnected) {
+        Serial.println("Pump ESP32 disconnected from Bluetooth");
+    }
+    wasConnected = isConnected;
+    
     if (ESP_BT.hasClient() && ESP_BT.available()) {
         String jsonString = "";
         bool foundStart = false;
@@ -118,6 +137,32 @@ void sendSensorDataToPump() {
     
     Serial.print("Sent sensor data to pump ESP32: ");
     Serial.println(jsonResponse);
+}
+
+/**
+ * @brief Checks if pump ESP32 is connected via Bluetooth
+ * @return true if pump ESP32 is connected, false otherwise
+ */
+bool isPumpESP32Connected() {
+    return ESP_BT.hasClient();
+}
+
+/**
+ * @brief Maintains Bluetooth connection with pump ESP32
+ * Should be called periodically in main loop
+ */
+void maintainPumpConnection() {
+    // Check connection status and log changes
+    static bool wasConnected = false;
+    bool isConnected = ESP_BT.hasClient();
+    
+    if (isConnected && !wasConnected) {
+        Serial.println("Pump ESP32 connected to Bluetooth server!");
+    } else if (!isConnected && wasConnected) {
+        Serial.println("Pump ESP32 disconnected from Bluetooth server");
+    }
+    
+    wasConnected = isConnected;
 }
 
 #endif // ENABLE_PUMP_CONTROL

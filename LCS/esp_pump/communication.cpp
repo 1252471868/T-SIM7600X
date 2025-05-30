@@ -1,18 +1,11 @@
 #include "communication.h"
 #include "global.h"
-#include "blynk_interface.h"
-// #include <ArduinoJson.h> // Redundant: Included via communication.h
-// #include <SD.h> // Needed for SD status check in sendSensorData (defined elsewhere)
-// #include "sd_card.h" // Needed for logToSD call in sendSensorData (defined elsewhere)
-// #include "sensors.h" // Needed for readBattery call in sendSensorData (defined elsewhere)
-// #include "system_utils.h" // Added for resetSystem call in sendSensorData (defined elsewhere)
+#include "pump_control.h"
 
-// Assume LED_PIN, BAT_ADC, VPIN_*, SD_CS are defined in EnvSensor.h
-// Assume blynkConnected, internetAvailable, stopReading, autoResetEnabled are globals defined elsewhere
 /**
  * @brief Processes incoming commands from a specified Stream.
  * Reads serial data, looks for a complete JSON object, parses it,
- * and acts based on the command received (e.g., RESET, DATA).
+ * and acts based on the command received (e.g., RESET, VOC_DATA).
  * Sends ACK response back to the same Stream.
  * 
  * @param inputPort The Stream object to read commands from and send ACKs to.
@@ -41,33 +34,16 @@ void processIncomingCommands(Stream& inputPort) {
                 return; 
             }
             String command = cmdDoc["cmd"].as<String>();
-            lastCommTime = millis(); // Updates variable defined in this file
+            lastMainESP32Comm = millis(); // Update last communication time
             Serial.print("Received command: "); Serial.println(command);
+            
             if (command == CMD_RESET) {
                 Serial.println("Device has reset. Sending ACK.");
                 sendCommandWithoutResponse(inputPort, CMD_ACK, ""); // Send ACK back to input port
             }
-            else if (command == CMD_DATA) {
-                Serial.println("Processing sensor data...");
-                JsonArray dataArray = cmdDoc["data"].as<JsonArray>();
-                if (dataArray.size() >= 15) {
-                    // Updates variables defined in this file
-                    temperature = dataArray[1]; humidity = dataArray[2]; pressure = dataArray[3];
-                    v_CO_w = dataArray[5]; v_CO_a = dataArray[6]; v_SO2_w = dataArray[7]; v_SO2_a = dataArray[8];
-                    v_NO2_w = dataArray[9]; v_NO2_a = dataArray[10]; v_OX_w = dataArray[11]; v_OX_a = dataArray[12];
-                    v_pid_w = dataArray[13]; v_co2_w = dataArray[14];
-                    Serial.println("Sensor data received successfully. Sending ACK.");
-                    sendCommandWithoutResponse(inputPort, CMD_ACK, ""); // Send ACK back to input port                 
-                    sendSensorData();
-                    sendVOCDataToPumpESP32();
-                    // Send sensor data to Blynk (including VOC data to pump ESP32)
-                    // sendSensorDataToBlynk();
-                } else {
-                    Serial.print("Incomplete sensor data received. Expected >=15 items, got: "); Serial.println(dataArray.size());
-                    sendCommandWithoutResponse(inputPort, CMD_ACK, ""); // Send ACK back to input port
-                }
-            } else {
+            else {
                  Serial.print("Unknown command received: "); Serial.println(command);
+                 sendCommandWithoutResponse(inputPort, CMD_ACK, ""); // Send ACK back to input port
             }
         } else if (foundStart && !foundEnd) {
            Serial.println("Incomplete JSON received (no closing '}'). Discarding.");
@@ -76,10 +52,10 @@ void processIncomingCommands(Stream& inputPort) {
 }
 
 /**
- * @brief Sends a command to the specified HardwareSerial port without waiting for a response.
+ * @brief Sends a command to the specified Stream port without waiting for a response.
  * Formats the command and data into a JSON string and sends it.
  *
- * @param serialPort The HardwareSerial port to send the command to.
+ * @param serialPort The Stream port to send the command to.
  * @param cmd The command string (e.g., CMD_ACK).
  * @param data The data string associated with the command (can be empty).
  */
@@ -94,11 +70,11 @@ void sendCommandWithoutResponse(Stream& serialPort, const char* cmd, const Strin
 }
 
 /**
- * @brief Sends a command to the specified HardwareSerial port and waits for a JSON response.
+ * @brief Sends a command to the specified Stream port and waits for a JSON response.
  * Formats the command and data into JSON, sends it, and waits
  * for a JSON response containing a "cmd" field within the specified timeout.
  *
- * @param serialPort The HardwareSerial port to send the command to and receive response from.
+ * @param serialPort The Stream port to send the command to and receive response from.
  * @param cmd The command string to send.
  * @param data The data string associated with the command.
  * @param timeout The maximum time in milliseconds to wait for a response.
@@ -134,7 +110,7 @@ bool sendCommand(Stream& serialPort, const char* cmd, const String& data, unsign
                 if (!error && respDoc.containsKey("cmd")) { 
                     String response = respDoc["cmd"].as<String>();
                     Serial.print("Received valid response command: "); Serial.println(response);
-                    lastCommTime = millis(); // Updates variable defined in this file
+                    // lastArduinoComm = millis(); // Update last Arduino communication time
                     return true; 
                 } else {
                     Serial.print("JSON response parsing failed or 'cmd' key missing. Error: "); Serial.println(error.c_str());
@@ -148,10 +124,10 @@ bool sendCommand(Stream& serialPort, const char* cmd, const String& data, unsign
 }
 
 /**
- * @brief Sends a command to the specified HardwareSerial port with a specified number of retries.
+ * @brief Sends a command to the specified Stream port with a specified number of retries.
  * Uses the sendCommand function and retries if it returns false.
  *
- * @param serialPort The HardwareSerial port to send the command to.
+ * @param serialPort The Stream port to send the command to.
  * @param cmd The command string to send.
  * @param data The data string associated with the command.
  * @param maxRetries The maximum number of times to retry sending the command.
@@ -169,28 +145,28 @@ bool sendCommandWithRetry(Stream& serialPort, const char* cmd, const String& dat
 }
 
 /**
- * @brief Checks if the device on the specified HardwareSerial port accepts operation in "No Internet" mode.
+ * @brief Checks if the device on the specified Stream port accepts operation in "No Internet" mode.
  * Sends the CMD_NONET command and expects an acknowledgment.
  *
- * @param serialPort The HardwareSerial port to query.
+ * @param serialPort The Stream port to query.
  * @return true If the device acknowledges the CMD_NONET command.
  * @return false If the command fails or times out.
  */
-bool checkNoInternetMode(Stream& serialPort) {
-    Serial.println("Querying device about No Internet mode acceptance...");
-    if (sendCommand(serialPort, CMD_NONET, "", CMD_TIMEOUT)) {
-        Serial.println("Device accepted No Internet mode."); return true;
-    } else {
-        Serial.println("Device did not accept or respond to No Internet mode query."); return false;
-    }
-}
+// bool checkNoInternetMode(Stream& serialPort) {
+//     Serial.println("Querying device about No Internet mode acceptance...");
+//     if (sendCommand(serialPort, CMD_NONET, "", CMD_TIMEOUT)) {
+//         Serial.println("Device accepted No Internet mode."); return true;
+//     } else {
+//         Serial.println("Device did not accept or respond to No Internet mode query."); return false;
+//     }
+// }
 
 /**
- * @brief Verifies communication with the device on the specified HardwareSerial port by sending an INFO command.
+ * @brief Verifies communication with the device on the specified Stream port by sending an INFO command.
  * Attempts to establish communication within a specified timeout, blinking an LED
  * during the process. Retries sending the command multiple times.
  *
- * @param serialPort The HardwareSerial port to verify communication with.
+ * @param serialPort The Stream port to verify communication with.
  * @return true If communication is successfully established (device responds).
  * @return false If communication cannot be established within the timeout.
  */
@@ -205,7 +181,7 @@ bool verifyArduinoCommunication(Stream& serialPort) {
         digitalWrite(LED_PIN, LOW); 
         if (sendCommand(serialPort, CMD_INFO, "", CMD_TIMEOUT)) {
             Serial.println("Communication with device established successfully!");
-            lastCommTime = millis(); // Updates variable defined in this file
+            // lastArduinoComm = millis();
             digitalWrite(LED_PIN, HIGH); 
             return true;
         }
@@ -219,10 +195,10 @@ bool verifyArduinoCommunication(Stream& serialPort) {
 }
 
 /**
- * @brief Sends the CMD_DATA command to the device on the specified HardwareSerial port without waiting for a response.
+ * @brief Sends the CMD_DATA command to the device on the specified Stream port without waiting for a response.
  * This requests the device to send its latest sensor readings.
  *
- * @param serialPort The HardwareSerial port to send the command to.
+ * @param serialPort The Stream port to send the command to.
  */
 void sendSensorDataCMD(Stream& serialPort) {
     Serial.println("Requesting sensor data from device...");
