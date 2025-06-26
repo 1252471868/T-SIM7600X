@@ -8,6 +8,9 @@ TinyGsm modem(debugger);
 #else
 TinyGsm modem(SerialAT); // TinyGSM modem object
 #endif
+TinyGsmClient client(modem);
+HttpClient httpClient = HttpClient(client, "blynk.cloud", 80);
+// HttpClient httpClient;
 
 volatile bool internetAvailable = true; // Network availability status
 

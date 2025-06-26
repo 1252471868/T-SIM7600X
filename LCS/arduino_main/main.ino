@@ -35,6 +35,8 @@
 #define CMD_COMPLETE "COMPLETE"   // Data successfully received
 #define CMD_FAIL "FAIL"           // Command failed
 
+
+#define ESP_Serial Serial2
 // Alphasense Sensor Pins
 #define pin_CO_w A0  // CO B4 - Working Electrode
 #define pin_CO_a A1  // CO B4 - Auxiliary Electrode
@@ -110,7 +112,7 @@ void setTimeFromString(String timeStr)
  */
 void processEspCommands()
 {
-  if (Serial2.available())
+  if (ESP_Serial.available())
   {
     // Wait for a complete JSON object
     String jsonString = "";
@@ -118,16 +120,16 @@ void processEspCommands()
     bool foundEnd = false;
 
     // Clear any garbage data first
-    while (Serial2.available() && Serial2.peek() != '{')
+    while (ESP_Serial.available() && ESP_Serial.peek() != '{')
     {
-      Serial2.read();
+      ESP_Serial.read();
     }
 
     // Read until we find a complete JSON object
     unsigned long startTime = millis();
-    while (Serial2.available() && (millis() - startTime < 1000))
+    while (ESP_Serial.available() && (millis() - startTime < 1000))
     {
-      char c = Serial2.read();
+      char c = ESP_Serial.read();
 
       if (c == '{')
       {
@@ -250,7 +252,7 @@ void sendJsonResponse(const String &cmd, const String &data)
 
   String response;
   serializeJson(respDoc, response);
-  Serial2.println(response);
+  ESP_Serial.println(response);
 
   Serial.print("Sent response: ");
   Serial.println(response);
@@ -320,7 +322,7 @@ void sendSensorDataToEsp()
   dataArray.add(v_co2_w);                                // 14: CO2_w
 
   // Serialize and send the complete command
-  serializeJson(sensorDoc, Serial2);
+  serializeJson(sensorDoc, ESP_Serial);
 
   Serial.println("Sensor data sent to ESP32");
 }
@@ -404,7 +406,7 @@ void setup()
 {
   // begin serial communication
   Serial.begin(115200);
-  Serial2.begin(115200);
+  ESP_Serial.begin(115200);
   delay(500);
   Serial.println("Initializing");
 

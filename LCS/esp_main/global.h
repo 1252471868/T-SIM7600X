@@ -3,10 +3,11 @@
 
 #define TINY_GSM_MODEM_SIM7600 // <<< Adjust if your modem is different
 #include <TinyGsmClient.h>     // Required for TinyGsm object
+#include <ArduinoHttpClient.h>
 #include <HardwareSerial.h>
 
-#define BOX_NUM 3
-#define BOX_NAME "box3"
+#define BOX_NUM 4
+#define BOX_NAME "box4"
 #define PUMP_NUM 1  // Which pump ESP32 to send VOC data to
 
 // Blynk configuration
@@ -120,6 +121,8 @@ const unsigned long MAX_FILE_SIZE = 1000000; // 1 MB
 // #define ENABLE_PUMP_CONTROL // Disabled - using HTTP API instead
 
 extern TinyGsm modem;
+// extern TinyGsmClient client;
+extern HttpClient httpClient;
 extern unsigned long lastCommTime;
 extern float temperature, humidity, pressure;
 extern double v_CO_w, v_CO_a, v_SO2_w, v_SO2_a;

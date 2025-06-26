@@ -135,7 +135,7 @@ void sendSensorData()
         if (!stopReading)
         {
             Serial.println("Logging data to SD card...");
-            logToSD(); // Assuming logToSD is available globally or via sd_card.h/cpp
+            // logToSD(); // Assuming logToSD is available globally or via sd_card.h/cpp
         }
         else
         {
@@ -250,76 +250,18 @@ void sendSensorDataToBlynk() {
 /**
  * @brief Sends VOC data to pump ESP32 via Blynk API
  */
+String pumpAuthToken = "";
+String resource = "";
+// const char *resource_template = "/external/api/update?token=%s&v16=%s";
+// char resource[150];
+
 void sendVOCDataToPumpESP32() {
     if (!blynkConnected) return;
     
-    // Emergency disable mechanism - if system is unstable, skip HTTP requests
-    static bool httpDisabled = false;
-    if (httpDisabled) {
-        static unsigned long lastDisableMsg = 0;
-        if (millis() - lastDisableMsg > 60000) { // Print message every minute
-            Serial.println("HTTP requests temporarily disabled due to system instability");
-            lastDisableMsg = millis();
-        }
-        return;
-    }
-    
-    static unsigned long lastVOCSend = 0;
-    static unsigned long lastCrashTime = 0;
-    static int consecutiveFailures = 0;
-    const unsigned long VOC_SEND_INTERVAL = 30000; // Increased to 30 seconds to reduce load
-    
-    // If we've had too many failures, temporarily disable HTTP
-    if (consecutiveFailures > 5) {
-        httpDisabled = true;
-        Serial.println("Too many HTTP failures - disabling HTTP requests temporarily");
-        return;
-    }
-    
-    // If we've had recent failures, increase the interval
-    unsigned long actualInterval = VOC_SEND_INTERVAL;
-    if (consecutiveFailures > 0) {
-        actualInterval = VOC_SEND_INTERVAL * (1 + consecutiveFailures); // Exponential backoff
-        if (actualInterval > 300000) actualInterval = 300000; // Max 5 minutes
-    }
-    
-    if (millis() - lastVOCSend < actualInterval) {
-        return; // Not time to send yet
-    }
-    
-    if (httpRequestInProgress) { // Check the global flag
-        Serial.println("HTTP request already in progress (checked in sendVOCDataToPumpESP32), skipping this call...");
-        return; // Prevent concurrent requests
-    }
-    
-    // Check available memory before making HTTP request
-    size_t freeHeap = ESP.getFreeHeap();
-    size_t minFreeHeap = ESP.getMinFreeHeap();
-    
-    if (freeHeap < 25000) { // Increased minimum to 25KB for safety
-        Serial.print("Insufficient memory for HTTP request. Free heap: ");
-        Serial.print(freeHeap);
-        Serial.print(", Min free heap: ");
-        Serial.println(minFreeHeap);
-        return;
-    }
-    
-    // Additional safety check - if minimum free heap is too low, skip
-    if (minFreeHeap < 15000) {
-        Serial.print("System memory fragmentation detected. Min free heap: ");
-        Serial.println(minFreeHeap);
-        return;
-    }
-    
-    Serial.print("Sending VOC data to pump ESP32 via HTTP API: ");
-    Serial.print(v_pid_w);
-    Serial.print(" (Free heap: ");
-    Serial.print(freeHeap);
-    Serial.println(" bytes)");
-    
     // Pump ESP32 auth tokens for different pump numbers
-    String pumpAuthToken = "";
-    
+
+    Serial.print("Preparing to send data: ");
+    Serial.println(v_pid_w);
     #if PUMP_NUM == 1
     pumpAuthToken = "jiH6wNgCtex-XP0jmEBz5iy2DEDvcrOc";
     #elif PUMP_NUM == 2
@@ -336,106 +278,25 @@ void sendVOCDataToPumpESP32() {
         Serial.println("Error: No pump auth token configured");
         return;
     }
-    
-    httpRequestInProgress = true; // Set global flag to prevent concurrent requests
-    
-    // Check cellular connection status before making HTTP request
-    if (!modem.isNetworkConnected()) {
-        Serial.println("Error: Cellular network not connected. Cannot send VOC data.");
-        httpRequestInProgress = false; // Clear flag on error
-        return;
-    }
-    
-    Serial.print("Cellular signal strength: ");
-    Serial.println(modem.getSignalQuality());
-    
-    // Create TinyGSM client for HTTP over cellular
-    TinyGsmClient client(modem);
-    
-    // Use HTTP (port 80) instead of HTTPS to avoid SSL complexity
-    String host = "blynk.cloud";
-    int port = 80; // HTTP port (simpler than HTTPS)
-    String path = "/external/api/update?token=" + pumpAuthToken + "&pin=V16&value=" + String(v_pid_w, 3);
-    
-    Serial.print("Connecting to: ");
-    Serial.print(host);
-    Serial.print(":");
-    Serial.println(port);
-    Serial.print("Path: ");
-    Serial.println(path);
-    
-    // Connect to server with timeout
-    if (!client.connect(host.c_str(), port)) {
-        Serial.println("Failed to connect to Blynk server via cellular");
-        httpRequestInProgress = false; // Clear flag on error
-        return;
-    }
-    
-    Serial.println("Connected to Blynk server. Sending HTTP request...");
-    
-    // Send HTTP GET request manually (simplified)
-    String request = "GET " + path + " HTTP/1.1\r\n";
-    request += "Host: " + host + "\r\n";
-    request += "Connection: close\r\n";
-    request += "\r\n";
-    
-    Serial.print("Request size: ");
-    Serial.println(request.length());
-    
-    client.print(request);
-    
-    // Wait for response with shorter timeout to avoid memory issues
-    unsigned long timeout = millis() + 5000; // Reduced to 5 second timeout
-    bool responseReceived = false;
-    
-    while (millis() < timeout && !responseReceived) {
-        // Reset watchdog during HTTP operation
-        if (millis() % 1000 == 0) {
-            // Reset watchdog every second during HTTP operation
-            // Note: This assumes resetWatchdog() is available from system_utils.h
-        }
-        
-        if (client.available()) {
-            // Just read the first line to get status code
-            String statusLine = client.readStringUntil('\n');
-            statusLine.trim();
-            
-            Serial.print("HTTP Status: ");
-            Serial.println(statusLine);
-            
-            // Simple status check - look for "200" in response
-            if (statusLine.indexOf("200") > 0) {
-                Serial.println("VOC data sent successfully to pump ESP32 via cellular");
-                consecutiveFailures = 0; // Reset failure counter on success
-            } else {
-                Serial.println("HTTP request may have failed - check status");
-                consecutiveFailures++;
-            }
-            
-            responseReceived = true;
-            break;
-        }
-        delay(10); // Small delay to prevent tight loop
-    }
-    
-    if (!responseReceived) {
-        Serial.println("HTTP request timeout via cellular");
-        consecutiveFailures++; // Increment failure counter on timeout
-    }
-    
-    // Always close connection and cleanup
-    client.stop();
-    Serial.println("HTTP connection closed");
-    
-    // Add small delay to ensure cleanup completes
-    delay(100);
-    
-    // Check memory after HTTP operation
-    Serial.print("Free heap after HTTP: ");
-    Serial.println(ESP.getFreeHeap());
-    
-    httpRequestInProgress = false; // Clear global flag when done
-    lastVOCSend = millis();
-    
-    Serial.println("VOC HTTP request completed successfully");
+    // char dataToSend[10];
+    // sprintf(dataToSend, "%.3f", v_pid_w);
+    // sprintf(resource, resource_template, pumpAuthToken, dataToSend);
+    resource = "https://blynk.cloud/external/api/update?token=" + pumpAuthToken + "&v16=" + String(v_pid_w, 4);
+    // httpRequestInProgress = true; // Set global flag to prevent concurrent requests
+    Serial.print("Making HTTPS GET request to: ");
+    Serial.println(resource);
+    // Make the API call
+    httpClient.get(resource);
+    // httpClient.beginRequest();
+    // httpClient.get("https://blynk.cloud/external/api/update?token=" + pumpAuthToken + "&v16=" + String(v_pid_w, 4));
+    // httpClient.endRequest();
+
+    // Read the response
+    int statusCode = httpClient.responseStatusCode();
+    String response = httpClient.responseBody();
+
+    Serial.print("Status code: ");
+    Serial.println(statusCode);
+    Serial.print("Response: ");
+    Serial.println(response);
 }

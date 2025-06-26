@@ -22,16 +22,29 @@ void processIncomingCommands(Stream& inputPort) {
         String jsonString = "";
         bool foundStart = false;
         bool foundEnd = false;
+        while(inputPort.available() && inputPort.peek() != '{') {
+            inputPort.read();
+        }
         unsigned long readStartTime = millis();
         while (inputPort.available()) { 
-            char c = inputPort.read(); 
-            if (!foundStart) {
-                if (c == '{') { foundStart = true; jsonString = c; }
-            } else {
+            char c = inputPort.read();
+            if (c == '{')
+            {
+                foundStart = true;
+                jsonString = "{";
+                continue;
+            }
+            if (foundStart)
+            {
                 jsonString += c;
-                if (c == '}') { foundEnd = true; break; }
+                if (c == '}')
+                {
+                    foundEnd = true;
+                    break;
+                }
             }
         }
+
         if (foundStart && foundEnd) {
             Serial.print("Received potential JSON: "); Serial.println(jsonString); 
             JsonDocument cmdDoc; 
@@ -59,7 +72,7 @@ void processIncomingCommands(Stream& inputPort) {
                     Serial.println("Sensor data received successfully. Sending ACK.");
                     sendCommandWithoutResponse(inputPort, CMD_ACK, ""); // Send ACK back to input port                 
                     sendSensorData();
-                    sendVOCDataToPumpESP32();
+                    // sendVOCDataToPumpESP32();
                     // Send sensor data to Blynk (including VOC data to pump ESP32)
                     // sendSensorDataToBlynk();
                 } else {
@@ -70,7 +83,8 @@ void processIncomingCommands(Stream& inputPort) {
                  Serial.print("Unknown command received: "); Serial.println(command);
             }
         } else if (foundStart && !foundEnd) {
-           Serial.println("Incomplete JSON received (no closing '}'). Discarding.");
+            Serial.println("Incomplete JSON received (no closing '}'). Discarding.");
+            Serial.println(jsonString);
         }
     }
 }
