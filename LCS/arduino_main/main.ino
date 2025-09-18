@@ -17,7 +17,19 @@
 #include <Time.h>
 #include <TimeLib.h>
 #include <Adafruit_Sensor.h>
+
+// Sensor selection
+// Define the BME sensor type here. Options: 680 or 280
+#define BME_SENSOR_TYPE 280
+
+#if BME_SENSOR_TYPE == 680
 #include "Adafruit_BME680.h"
+#elif BME_SENSOR_TYPE == 280
+#include <Adafruit_BME280.h>
+#else
+#error "Invalid BME_SENSOR_TYPE specified. Please choose 680 or 280."
+#endif
+
 #include <ArduinoJson.h>
 
 // Add TimerOne library for hardware timer
@@ -35,8 +47,7 @@
 #define CMD_COMPLETE "COMPLETE"   // Data successfully received
 #define CMD_FAIL "FAIL"           // Command failed
 
-
-#define ESP_Serial Serial2
+#define ESP_Serial Serial3
 // Alphasense Sensor Pins
 #define pin_CO_w A0  // CO B4 - Working Electrode
 #define pin_CO_a A1  // CO B4 - Auxiliary Electrode
@@ -54,31 +65,41 @@ const float voltageSupply = 5.0;       // Analog voltage supply (usually 5V for 
 #define SEALEVELPRESSURE_HPA (1013.25) // Standard sea level pressure in hPa for altitude calculation
 
 // SoftwareSerial instances (Note: SoftwareSerial library not used directly here, likely for ESP32 comms if different pins were used)
-rgb_lcd lcd;           // LCD display object
+rgb_lcd lcd;                // LCD display object
+#if BME_SENSOR_TYPE == 680
 Adafruit_BME680 bme(&Wire); // BME680 sensor object using I2C
+#elif BME_SENSOR_TYPE == 280
+Adafruit_BME280 bme; // BME280 sensor object using I2C
+#endif
 
 // Communication control flags and timing
-bool networkStatus = false;                // Tracks if ESP32 reports network connectivity (e.g., Blynk)
-bool ESP32Status = false;                  // Tracks if communication with ESP32 is active
-bool sensorStatus = false;                 // Tracks if BME680 sensor initialized successfully
-unsigned long lastEspCommandTime = 0;      // Timestamp of the last received command from ESP32
+bool networkStatus = false;               // Tracks if ESP32 reports network connectivity (e.g., Blynk)
+bool ESP32Status = false;                 // Tracks if communication with ESP32 is active
+bool sensorStatus = false;                // Tracks if BME sensor initialized successfully
+unsigned long lastEspCommandTime = 0;     // Timestamp of the last received command from ESP32
 unsigned long lastCommunicationCheck = 0; // Timestamp of the last communication check
-const unsigned long COMM_TIMEOUT = 60000;  // ESP32 communication timeout (60 seconds)
-bool autoResetEnabled = false;             // Flag to enable/disable auto-reset on timeout (currently false)
-const int resetPin = 8;                    // Digital pin connected to ESP32 reset circuit (adjust as needed)
+const unsigned long COMM_TIMEOUT = 60000; // ESP32 communication timeout (60 seconds)
+bool autoResetEnabled = false;            // Flag to enable/disable auto-reset on timeout (currently false)
+const int resetPin = 8;                   // Digital pin connected to ESP32 reset circuit (adjust as needed)
+
+// LCD Display control
+int displayPage = 0;
+int lastDisplayPage = -1;
+unsigned long lastDisplaySwitchTime = 0;
+const unsigned long DISPLAY_SWITCH_INTERVAL = 10000; // 10 seconds
 
 // Sensor Readings Variables
-float rh = 0;      // Relative Humidity (%)
-float t = 0;       // Temperature (Celsius)
-float p = 0;       // Pressure (Pascals)
-double v_CO_w = 0; // CO Working Electrode Voltage
-double v_CO_a = 0; // CO Auxiliary Electrode Voltage
+float rh = 0;       // Relative Humidity (%)
+float t = 0;        // Temperature (Celsius)
+float p = 0;        // Pressure (Pascals)
+double v_CO_w = 0;  // CO Working Electrode Voltage
+double v_CO_a = 0;  // CO Auxiliary Electrode Voltage
 double v_SO2_w = 0; // SO2 Working Electrode Voltage
 double v_SO2_a = 0; // SO2 Auxiliary Electrode Voltage
 double v_NO2_w = 0; // NO2 Working Electrode Voltage
 double v_NO2_a = 0; // NO2 Auxiliary Electrode Voltage
-double v_OX_w = 0; // OX (O3) Working Electrode Voltage
-double v_OX_a = 0; // OX (O3) Auxiliary Electrode Voltage
+double v_OX_w = 0;  // OX (O3) Working Electrode Voltage
+double v_OX_a = 0;  // OX (O3) Auxiliary Electrode Voltage
 double v_pid_w = 0; // PID (VOCs) Voltage
 double v_co2_w = 0; // CO2 Sensor Voltage
 
@@ -225,7 +246,8 @@ void processEspCommands()
     // Check for timeout only if auto-reset is enabled
     if (millis() - lastEspCommandTime > COMM_TIMEOUT)
     {
-      if (ESP32Status) { // Only print timeout message once
+      if (ESP32Status)
+      { // Only print timeout message once
         Serial.println("ESP32 communication timeout.");
         ESP32Status = false; // Mark ESP32 as disconnected
       }
@@ -275,13 +297,19 @@ void sampleSensors()
   v_pid_w = analogRead(pin_pid) / 1024.000 * voltageSupply;
   v_co2_w = analogRead(pin_CO2) / 1024.000 * voltageSupply;
 
-  // Get BME680 readings
+  // Get BME readings
+#if BME_SENSOR_TYPE == 680
   if (bme.performReading())
   {
     rh = bme.humidity;   // relative humidity (%)
     t = bme.temperature; // temperature (C)
     p = bme.pressure;    // pressure (pa)
   }
+#elif BME_SENSOR_TYPE == 280
+  rh = bme.readHumidity();    // relative humidity (%)
+  t = bme.readTemperature();  // temperature (C)
+  p = bme.readPressure();     // pressure (pa)
+#endif
   sendSensorDataToEsp();
 }
 
@@ -305,11 +333,15 @@ void sendSensorDataToEsp()
   JsonArray dataArray = sensorDoc.createNestedArray("data");
 
   // Add all data to the array in a predefined order
-  dataArray.add(timebuffer_save);            // 0: timestamp (YYYY MM DD HH:MM:SS format)
+  dataArray.add(" ");                                    // 0: timestamp (YYYY MM DD HH:MM:SS format)
   dataArray.add(t);                                      // 1: temperature
   dataArray.add(rh);                                     // 2: humidity
   dataArray.add(p);                                      // 3: pressure
+#if BME_SENSOR_TYPE == 680
   dataArray.add(bme.readAltitude(SEALEVELPRESSURE_HPA)); // 4: altitude
+#elif BME_SENSOR_TYPE == 280
+  dataArray.add(bme.readAltitude(SEALEVELPRESSURE_HPA)); // 4: altitude for BME280
+#endif
   dataArray.add(v_CO_w);                                 // 5: CO_w
   dataArray.add(v_CO_a);                                 // 6: CO_a
   dataArray.add(v_SO2_w);                                // 7: SO2_w
@@ -355,23 +387,23 @@ void resetArduino()
  */
 void displayStatus()
 {
-  lcd.clear();
+  // lcd.clear(); // Removed to prevent flickering, handled in main loop
 
   // First line: Time and ESP32 status
   lcd.setCursor(0, 0);
   char timebuffer[10];
-  sprintf(timebuffer, "%02d:%02d", hour(), minute());
+  sprintf(timebuffer, "%02d:%02d:%02d", hour(), minute(), second());
   lcd.print(timebuffer);
 
-  lcd.setCursor(8, 0);
+  lcd.setCursor(9, 0);
   if (ESP32Status)
   {
-    lcd.print("ESP32:OK");
+    lcd.print("ESP:RDY");
     lcd.setRGB(23, 180, 36); // Green for good
   }
   else
   {
-    lcd.print("ESP32:--");
+    lcd.print("ESP:--");
     lcd.setRGB(255, 165, 0); // Orange for warning
   }
 
@@ -379,16 +411,16 @@ void displayStatus()
   lcd.setCursor(0, 1);
   if (networkStatus)
   {
-    lcd.print("NET:OK ");
+    lcd.print("CONN:RDY");
   }
   else
   {
-    lcd.print("NET:-- ");
+    lcd.print("CONN:-- ");
   }
 
   if (sensorStatus)
   {
-    lcd.print("SENS:OK");
+    lcd.print("SENS:RDY");
     lcd.setRGB(23, 180, 36); // Green for good
   }
   else
@@ -396,6 +428,52 @@ void displayStatus()
     lcd.print("SENS:--");
     lcd.setRGB(255, 0, 0); // Red for error
   }
+}
+
+/**
+ * @brief Displays the first set of sensor readings (CO, NO2) on the LCD.
+ */
+void displayPrimarySensors()
+{
+  // Row 1: Titles
+  lcd.setCursor(0, 0);
+  lcd.print("CO");
+  lcd.setCursor(9, 0);
+  lcd.print("NO2");
+
+  // Row 2: Values (formatted to 2 decimal places)
+  char buffer[6];
+
+  dtostrf(v_CO_w, 4, 2, buffer);
+  lcd.setCursor(0, 1);
+  lcd.print(buffer);
+
+  dtostrf(v_NO2_w, 4, 2, buffer);
+  lcd.setCursor(9, 1);
+  lcd.print(buffer);
+}
+
+/**
+ * @brief Displays the second set of sensor readings (O3, SO2) on the LCD.
+ */
+void displaySecondarySensors()
+{
+  // Row 1: Titles
+  lcd.setCursor(0, 0);
+  lcd.print("O3");
+  lcd.setCursor(9, 0);
+  lcd.print("SO2");
+
+  // Row 2: Values (formatted to 2 decimal places)
+  char buffer[6];
+
+  dtostrf(v_OX_w, 4, 2, buffer);
+  lcd.setCursor(0, 1);
+  lcd.print(buffer);
+
+  dtostrf(v_SO2_w, 4, 2, buffer);
+  lcd.setCursor(9, 1);
+  lcd.print(buffer);
 }
 
 /**
@@ -434,7 +512,8 @@ void setup()
   delay(500);
   Serial.println("1");
 
-  // Initialize BME680 sensor
+// Initialize BME sensor
+#if BME_SENSOR_TYPE == 680
   if (!bme.begin())
   {
     Serial.println("BME680 error!");
@@ -446,6 +525,21 @@ void setup()
   bme.setPressureOversampling(BME680_OS_4X);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150); // 320*C for 150 ms
+#elif BME_SENSOR_TYPE == 280
+  if (!bme.begin())
+  {
+    Serial.println("BME280 error!");
+    while (1)
+      ;
+  }
+  // Optional: configure BME280 settings
+  bme.setSampling(Adafruit_BME280::MODE_NORMAL,
+                  Adafruit_BME280::SAMPLING_X8,  // temperature
+                  Adafruit_BME280::SAMPLING_X2,  // pressure
+                  Adafruit_BME280::SAMPLING_X4,  // humidity
+                  Adafruit_BME280::FILTER_X16,
+                  Adafruit_BME280::STANDBY_MS_0_5);
+#endif
   lcd.setCursor(0, 1);
   lcd.print("BME ready");
   sensorStatus = true;
@@ -515,14 +609,49 @@ void setup()
 
 /**
  * @brief Main loop. Continuously processes ESP32 commands and updates the LCD status.
+ *        Cycles through different display pages every 10 seconds after network is connected.
  */
 void loop()
 {
   // Process any incoming commands from ESP32
   processEspCommands();
-  // Display status information
-  displayStatus();
 
-  // Small delay to prevent LCD flickering
-  // delay(1000);
+  // Only switch pages if the network is connected
+  if (networkStatus)
+  {
+    // Check if it's time to switch the display page
+    if (millis() - lastDisplaySwitchTime >= DISPLAY_SWITCH_INTERVAL)
+    {
+      displayPage = (displayPage + 1) % 3; // Cycle through 0:Status, 1:Sensors1, 2:Sensors2
+      lastDisplaySwitchTime = millis();
+    }
+  }
+  else
+  {
+    // If network is not connected, stay on the status page
+    displayPage = 0;
+  }
+
+  // Update display content. Only clear screen when page actually changes to prevent flickering.
+  if (displayPage != lastDisplayPage)
+  {
+    lcd.clear();
+    lastDisplayPage = displayPage;
+  }
+
+  switch (displayPage)
+  {
+  case 0:
+    displayStatus();
+    break;
+  case 1:
+    displayPrimarySensors();
+    break;
+  case 2:
+    displaySecondarySensors();
+    break;
+  }
+
+  // Small delay to prevent high frequency polling and reduce LCD flickering
+  delay(100);
 }

@@ -476,6 +476,10 @@ void logToSD() {
     SDstorage.print(" ");
     SDstorage.print(pressure, 4);
     SDstorage.print(" ");
+    SDstorage.print(double(lat_f), 4);
+    SDstorage.print(" ");
+    SDstorage.print(double(lon_f), 4);
+    SDstorage.print(" ");
     SDstorage.print(v_CO_w, 4);
     SDstorage.print(" ");
     SDstorage.print(v_CO_a, 4);

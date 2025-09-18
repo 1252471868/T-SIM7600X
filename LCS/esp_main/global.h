@@ -18,7 +18,7 @@
 #if BOX_NUM == 1
 #define BLYNK_AUTH_TOKEN "iihKlmC4B_tYYOZZS68Fm9H8PUJX7Ed_" // Replace with your token
 #elif BOX_NUM == 2
-#define BLYNK_AUTH_TOKEN "YsI-BpuhjNEWeTcLKNbNLIiY_k_ulSpI" // Replace with your token
+#define BLYNK_AUTH_TOKEN "uNbOdZl04i28VPRk_GZImcScH87b5If5" // Replace with your token
 #elif BOX_NUM == 3
 #define BLYNK_AUTH_TOKEN "tzqMA1jqbtyY2iCwSWi6u34KtkcQKZ0L" // Replace with your token
 #elif BOX_NUM == 4
@@ -87,6 +87,7 @@ const long numberOfLoop = 100000; // number of loops to run
 #define VPIN_OX_A V14           // OX Auxiliary Electrode
 #define VPIN_PID_W V9           // PID Working Electrode
 #define VPIN_CO2_W V10          // CO2 Working Electrode
+#define VPIN_LOCATION V19           // Location
 #define VPIN_RESET V17          // Reset toggle (BLYNK_WRITE)
 #define VPIN_AUTO_RESET V16     // Auto-Reset toggle (BLYNK_WRITE)
 #define VPIN_ARDUINO_STATUS V15 // Arduino connection status (1=OK, 0=Fail)
@@ -128,7 +129,7 @@ extern float temperature, humidity, pressure;
 extern double v_CO_w, v_CO_a, v_SO2_w, v_SO2_a;
 extern double v_NO2_w, v_NO2_a, v_OX_w, v_OX_a;
 extern double v_pid_w, v_co2_w;
-
+extern float lat_f, lon_f;
 extern HardwareSerial ArduinoSerial;
 extern volatile bool internetAvailable;
 

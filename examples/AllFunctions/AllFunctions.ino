@@ -34,7 +34,7 @@
 #define TINY_GSM_TEST_USSD     true
 // #define TINY_GSM_TEST_TEMPERATURE   true
 #define TINY_GSM_TEST_TIME          true
-// #define TINY_GSM_TEST_GPS           true
+#define TINY_GSM_TEST_GPS           true
 // powerdown modem after tests
 #define TINY_GSM_POWERDOWN          true
 // #define TEST_RING_RI_PIN            true

@@ -16,7 +16,7 @@
 #define GSM_PIN ""
 
 // Your GPRS credentials, if any
-const char apn[]  = "YOUR-APN";     //SET TO YOUR APN
+const char apn[]  = "";     //SET TO YOUR APN
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
@@ -70,6 +70,17 @@ void modem_on() {
   int i = 40;
   Serial.print(F("\r\n# Startup #\r\n"));
   Serial.print(F("# Sending \"AT\" to Modem. Waiting for Response\r\n# "));
+
+  for (int k = 0; k < 3; ++k) {
+      while (!modem.testAT(5000)) {
+          Serial.println("Try to start modem...");
+          pinMode(MODEM_PWRKEY, OUTPUT);
+          digitalWrite(MODEM_PWRKEY, HIGH);
+          delay(300); //Need delay
+          digitalWrite(MODEM_PWRKEY, LOW);
+      }
+  }
+
   while (i) {
     SerialAT.println(F("AT"));
 
@@ -79,6 +90,7 @@ void modem_on() {
 
     // Did the Modem send something?
     if (SerialAT.available()) {
+      Serial.print(F("."));
       String r = SerialAT.readString();
       Serial.print("\r\n# Response:\r\n" + r);
       if ( r.indexOf("OK") >= 0 ) {
@@ -91,6 +103,7 @@ void modem_on() {
 
     // Did the User try to send something? Maybe he did not receive the first messages yet. Inform the User what is happening
     if (Serial.available() && !reply) {
+      Serial.print(F("."));
       Serial.read();
       Serial.print(F("\r\n# Modem is not yet online."));
       Serial.print(F("\r\n# Sending \"AT\" to Modem. Waiting for Response\r\n# "));

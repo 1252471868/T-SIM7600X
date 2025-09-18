@@ -52,6 +52,9 @@ void setupModem() {
 
     String name = modem.getModemName();
     Serial.println("Modem Name: " + name);
+    Serial.println("Enabling GPS...");
+    modem.enableGPS();
+    delay(1000);
 }
 
 /**

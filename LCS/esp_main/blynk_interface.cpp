@@ -91,8 +91,16 @@ bool initializeBlynk() { // Renamed from setupBlynk to avoid confusion with main
 void sendSensorData()
 {
     // Check if new data is actually available to be sent
+    int gps_status = 0;
     Serial.println("Processing available sensor data...");
-
+    if (modem.getGPS(&lat_f, &lon_f)){
+        Serial.println("GPS data received successfully.");
+        gps_status = 1;
+    }
+    else{
+        Serial.println("Invalid GPS data received");
+        gps_status = 0;
+    }
     // Send data to Blynk if network and connection are available
     if (internetAvailable && blynkConnected)
     {
@@ -116,6 +124,10 @@ void sendSensorData()
         Blynk.virtualWrite(VPIN_OX_A, v_OX_a);
         Blynk.virtualWrite(VPIN_PID_W, v_pid_w);
         Blynk.virtualWrite(VPIN_CO2_W, v_co2_w);
+        if (gps_status == 1){
+            Blynk.virtualWrite(VPIN_LOCATION, double(lat_f), double(lon_f));
+        }
+        
 
         // Status information
         bool isArduinoConnected = (millis() - lastCommTime < CMD_TIMEOUT); // Check if Arduino comms recent
@@ -135,7 +147,7 @@ void sendSensorData()
         if (!stopReading)
         {
             Serial.println("Logging data to SD card...");
-            // logToSD(); // Assuming logToSD is available globally or via sd_card.h/cpp
+            logToSD(); // Assuming logToSD is available globally or via sd_card.h/cpp
         }
         else
         {

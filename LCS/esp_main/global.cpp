@@ -20,6 +20,7 @@ float temperature = 0.0, humidity = 0.0, pressure = 0.0;
 double v_CO_w = 0.0, v_CO_a = 0.0, v_SO2_w = 0.0, v_SO2_a = 0.0;
 double v_NO2_w = 0.0, v_NO2_a = 0.0, v_OX_w = 0.0, v_OX_a = 0.0;
 double v_pid_w = 0.0, v_co2_w = 0.0;
+float lat_f = 0.0, lon_f = 0.0;
 
 // Hardware Communication Objects
 HardwareSerial ArduinoSerial(2); // UART2 (GPIO 16=RX, 17=TX) for Arduino communication

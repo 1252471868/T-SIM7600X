@@ -125,7 +125,7 @@ void logToSD() {
             createDataFilename();
             SDstorage = SD.open(filename.c_str(), FILE_WRITE);
             if(SDstorage) {
-                SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W");
+                SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),Lon,Lat,CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W");
                 SDstorage.flush();
                 Serial.println("Created new file after reopen failure: " + filename);
             } else {
@@ -163,7 +163,7 @@ void logToSD() {
             if (SDstorage) {
                 Serial.println("Created and opened new data file: " + filename);
                 // Write the header to the new file
-                SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W");
+                SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),Lon,Lat,CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W");
                 SDstorage.flush(); // Ensure header is written
             } else {
                 Serial.println("CRITICAL: Failed to create new data file after size limit reached!");
@@ -186,6 +186,8 @@ void logToSD() {
         SDstorage.print(temperature, 4);    SDstorage.print(",");
         SDstorage.print(humidity, 4);       SDstorage.print(",");
         SDstorage.print(pressure / 100.0, 4); SDstorage.print(","); // Convert Pa to hPa for header consistency
+        SDstorage.print(lon_f, 4);          SDstorage.print(",");
+        SDstorage.print(lat_f, 4);          SDstorage.print(",");
         SDstorage.print(v_CO_w, 4);         SDstorage.print(",");
         SDstorage.print(v_CO_a, 4);         SDstorage.print(",");
         SDstorage.print(v_SO2_w, 4);        SDstorage.print(",");
