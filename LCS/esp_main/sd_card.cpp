@@ -79,7 +79,7 @@ void setupSD() {
     if (SDstorage) {
         Serial.println("Opened initial data file: " + filename);
         // Write the header row to the new file
-        SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W"); // Using CSV format
+        SDstorage.println("Time,Temperature(C),Humidity(%),Pressure(hPa),Lon,Lat,CO_W,CO_A,SO2_W,SO2_A,NO2_W,NO2_A,OX_W,OX_A,PID_W,CO2_W"); // Using CSV format
         SDstorage.flush(); // Ensure header is written immediately
         Serial.println("Wrote header to data file.");
     } else {
